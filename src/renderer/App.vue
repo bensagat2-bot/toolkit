@@ -53,6 +53,11 @@
 </template>
 
 <script setup>
+import { onMounted } from 'vue'
+
+onMounted(() => {
+  document.getElementById('root').style.display = 'block'
+})
 </script>
 
 <style lang="less">
