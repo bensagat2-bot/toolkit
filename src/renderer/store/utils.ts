@@ -1,6 +1,6 @@
 import { getThemes as getThemesFromIpc } from '@renderer/utils/ipc'
 import { isUrl, encodePath } from '@common/utils/common'
-import { themeInfo, themeShouldUseDarkColors } from './index'
+import { themeInfo, themeShouldUseDarkColors, themeId } from './index'
 
 let themesData: LX.ThemeInfo | null = null
 

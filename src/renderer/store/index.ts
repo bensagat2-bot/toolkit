@@ -4,7 +4,14 @@ import { windowSizeList as defaultWindowSizeList } from '@common/config'
 export const appSetting = window.appSetting || {}
 
 export const themeId = ref('default')
-export const themeInfo = reactive({
+export const themeInfo = reactive<{
+  id: string
+  name: string
+  isDark: boolean
+  dataPath: string
+  themes: LX.Theme[]
+  userThemes: LX.Theme[]
+}>({
   id: 'default',
   name: 'Default',
   isDark: false,

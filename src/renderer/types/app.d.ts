@@ -5,6 +5,7 @@ import { type I18n } from '@renderer/plugins/i18n'
 interface Lx {
   isEditingHotKey: boolean
   isProd: boolean
+  rootOffset: number
 }
 
 declare global {

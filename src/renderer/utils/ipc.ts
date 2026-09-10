@@ -4,11 +4,19 @@ export const sendIpcToMain = <T = any>(channel: string, ...args: any[]): Promise
   return ipcRenderer.invoke(channel, ...args)
 }
 
-export const rendererOn = (name: string, listener: LX.IpcRendererEventListener): void
-export const rendererOn = <T>(name: string, listener: LX.IpcRendererEventListenerParams<T>): void
-export const rendererOn = <T>(name: string, listener: LX.IpcRendererEventListenerParams<T>): void => {
+export function rendererOn(name: string, listener: LX.IpcRendererEventListener): void
+export function rendererOn<T>(name: string, listener: LX.IpcRendererEventListenerParams<T>): void
+export function rendererOn<T>(name: string, listener: LX.IpcRendererEventListener | LX.IpcRendererEventListenerParams<T>): void {
   ipcRenderer.on(name, (event, params) => {
-    listener({ event, params })
+    ;(listener as LX.IpcRendererEventListenerParams<T>)({ event, params })
+  })
+}
+
+export function rendererOnce(name: string, listener: LX.IpcRendererEventListener): void
+export function rendererOnce<T>(name: string, listener: LX.IpcRendererEventListenerParams<T>): void
+export function rendererOnce<T>(name: string, listener: LX.IpcRendererEventListener | LX.IpcRendererEventListenerParams<T>): void {
+  ipcRenderer.once(name, (event, params) => {
+    ;(listener as LX.IpcRendererEventListenerParams<T>)({ event, params })
   })
 }
 
