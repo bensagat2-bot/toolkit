@@ -6,33 +6,33 @@ const noop = () => {}
 
 export default () => {
   mainHandle<string, LX.UserApi.ImportUserApi>(WIN_MAIN_RENDERER_EVENT_NAME.import_user_api, async({ params: script }) => {
-    return { success: false, message: 'User API not available' }
+    return { apiInfo: { id: '', name: '', enable: false, api: null, allowShowUpdateAlert: true }, apiList: [] }
   })
 
   mainHandle<string[], LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.remove_user_api, async({ params: apiIds }) => {
     return []
   })
 
-  mainHandle<LX.UserApi.UserApiSetApiParams>(WIN_MAIN_RENDERER_EVENT_NAME.set_user_api, async({ params: apiId }) => {
+  mainHandle<LX.UserApi.UserApiSetApiParams, void>(WIN_MAIN_RENDERER_EVENT_NAME.set_user_api, async({ params: apiId }) => {
     return
   })
 
-  mainHandle<LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.get_user_api_list, async() => {
+  mainHandle<any, LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.get_user_api_list, async() => {
     return []
   })
 
-  mainHandle<LX.UserApi.UserApiStatus>(WIN_MAIN_RENDERER_EVENT_NAME.get_user_api_status, async() => {
-    return { isEnable: false }
+  mainHandle<any, LX.UserApi.UserApiStatus>(WIN_MAIN_RENDERER_EVENT_NAME.get_user_api_status, async() => {
+    return { status: 'disable' as const, isEnable: false }
   })
 
-  mainHandle<LX.UserApi.UserApiSetAllowUpdateAlertParams>(WIN_MAIN_RENDERER_EVENT_NAME.user_api_set_allow_update_alert, async({ params: { id, enable } }) => {
+  mainHandle<LX.UserApi.UserApiSetAllowUpdateAlertParams, void>(WIN_MAIN_RENDERER_EVENT_NAME.user_api_set_allow_update_alert, async({ params: { id, enable } }) => {
     noop()
   })
 
-  mainHandle<LX.UserApi.UserApiRequestParams>(WIN_MAIN_RENDERER_EVENT_NAME.request_user_api, async({ params }) => {
+  mainHandle<LX.UserApi.UserApiRequestParams, any>(WIN_MAIN_RENDERER_EVENT_NAME.request_user_api, async({ params }) => {
     return { success: false, message: 'User API not available' }
   })
-  mainHandle<LX.UserApi.UserApiRequestCancelParams>(WIN_MAIN_RENDERER_EVENT_NAME.request_user_api_cancel, async({ params: requestKey }) => {
+  mainHandle<LX.UserApi.UserApiRequestCancelParams, void>(WIN_MAIN_RENDERER_EVENT_NAME.request_user_api_cancel, async({ params: requestKey }) => {
     noop()
   })
 }

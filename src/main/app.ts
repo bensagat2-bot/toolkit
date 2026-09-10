@@ -77,8 +77,7 @@ export default async () => {
     },
     theme: {
       shouldUseDarkColors: nativeTheme.shouldUseDarkColors,
-      theme: { id: '', name: 'default', isDark: false, colors: {} },
-      colors: {},
+      theme: { id: 'default', name: 'default', isDark: false, colors: {} },
     },
     dataPath: path.join(app.getPath('userData'), 'data'),
   }
