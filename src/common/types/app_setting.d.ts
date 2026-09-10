@@ -21,12 +21,6 @@ declare namespace LX {
     'tray.enable': boolean
     'tray.themeId': number
 
-    'desktopLyric.enable': boolean
-    'desktopLyric.isLock': boolean
-    'desktopLyric.isAlwaysOnTop': boolean
-
-    'player.isShowStatusBarLyric': boolean
-
     'theme.id': string
     'theme.lightId': string
     'theme.darkId': string
