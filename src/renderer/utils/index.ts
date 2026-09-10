@@ -5,6 +5,10 @@ export * from '@common/utils/nodejs'
 export * from '@common/utils/common'
 export * from '@common/utils/tools'
 
+export const sendIpcToMain = (channel: string, ...args: any[]) => {
+  window.ipcRenderer.invoke(channel, ...args)
+}
+
 /**
  * 格式化播放数量
  * @param {*} num 数字
