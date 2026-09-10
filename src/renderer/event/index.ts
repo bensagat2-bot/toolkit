@@ -4,8 +4,8 @@ import { createAppEventHub } from './appEvent'
 export const registerEvents = () => {
   window.app_event = createAppEventHub()
 
-  rendererOn('theme_change', ({ params }) => {
-    window.setTheme((params as LX.ThemeSetting).theme.colors)
+  rendererOn<LX.ThemeSetting>('theme_change', ({ params }) => {
+    window.setTheme(params.theme.colors)
   })
 }
 
