@@ -11,6 +11,7 @@ interface Lx {
   isSkipTrayQuit: boolean
   event_app: any
   theme: LX.ThemeSetting
+  [key: string]: any
 }
 
 declare global {

@@ -25,12 +25,8 @@ const playerState = {
 }
 
 const watchConfigKeys = [
-  'desktopLyric.enable',
-  'desktopLyric.isLock',
-  'desktopLyric.isAlwaysOnTop',
   'tray.themeId',
   'tray.enable',
-  'player.isShowStatusBarLyric',
   'common.langId',
 ] satisfies Array<keyof LX.AppSetting>
 
