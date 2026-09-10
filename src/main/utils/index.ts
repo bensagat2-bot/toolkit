@@ -4,7 +4,7 @@ import getStore from '@main/utils/store'
 import { STORE_NAMES, URL_SCHEME_RXP } from '@common/constants'
 import defaultSetting from '@common/defaultSetting'
 import defaultHotKey from '@common/defaultHotKey'
-import { migrateDataJson, migrateHotKey, migrateUserApi, parseDataFile } from './migrate'
+import { migrateHotKey, migrateUserApi, parseDataFile } from './migrate'
 import { nativeTheme, powerSaveBlocker } from 'electron'
 import { joinPath } from '@common/utils/nodejs'
 import themes from '@common/theme/index.json'
@@ -144,7 +144,6 @@ export const initSetting = async() => {
     const config = await parseDataFile<{ setting?: any }>('config.json')
     if (config?.setting) setting = config.setting as LX.AppSetting
     await migrateUserApi()
-    await migrateDataJson()
   }
 
   // console.log(setting)
