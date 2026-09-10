@@ -113,18 +113,18 @@ declare namespace LX {
     desc: string
   }
 
-  interface Player {
-    StatusButtonActions: 'play' | 'pause' | 'prev' | 'next' | 'collect' | 'unCollect'
-    Status: {
+  namespace Player {
+    type StatusButtonActions = 'play' | 'pause' | 'prev' | 'next' | 'collect' | 'unCollect'
+    type Status = {
       isPlaying: boolean
       playState: string
     }
-    SavedPlayInfo: {
+    type SavedPlayInfo = {
       listId: string
       index: number
       progress: number
     }
-    LyricInfo: {
+    type LyricInfo = {
       lyric: string
       tlyric: string
     }
