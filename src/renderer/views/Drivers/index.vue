@@ -1,9 +1,7 @@
 <template>
   <div :class="$style.container">
-    <div :class="$style.sidebar">
-      <div :class="$style.sidebarHeader">
-        <h2 :class="$style.title">Drivers</h2>
-      </div>
+    <div :class="$style.header">
+      <h2 :class="$style.title">Drivers</h2>
       <ul :class="$style.categoryList">
         <li
           v-for="category in categories"
@@ -408,60 +406,53 @@ export default {
   overflow: hidden;
   height: 100%;
   display: flex;
+  flex-flow: column nowrap;
   position: relative;
 }
 
-.sidebar {
+.header {
   flex: none;
-  width: 220px;
-  display: flex;
-  flex-flow: column nowrap;
-  border-right: 1px solid var(--color-border);
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-primary-light-500);
   background-color: var(--color-main-background);
-}
-
-.sidebarHeader {
-  padding: 16px;
-  border-bottom: 1px solid var(--color-border);
 }
 
 .title {
   font-size: 16px;
-  font-weight: 500;
-  color: var(--color-primary);
-  margin: 0;
+  font-weight: 600;
+  color: var(--color-font);
+  margin: 0 0 10px;
 }
 
 .categoryList {
-  flex: auto;
-  overflow-y: auto;
-  padding: 8px 0;
+  display: flex;
+  flex-flow: row wrap;
+  gap: 6px;
   margin: 0;
+  padding: 0;
   list-style: none;
 }
 
 .categoryItem {
-  padding: 10px 16px;
+  padding: 5px 12px;
   cursor: pointer;
-  transition: background-color 0.2s;
-  color: var(--color-font);
-  
+  border-radius: 4px;
+  transition: background-color 0.2s, color 0.2s;
+  color: var(--color-font-label);
+
   &:hover {
     background-color: var(--color-button-background-hover);
   }
-  
+
   &.active {
-    background-color: var(--color-primary-background-hover);
-    color: var(--color-primary);
-    border-left: 3px solid var(--color-primary);
-    padding-left: 13px;
+    background-color: var(--color-primary);
+    color: var(--color-primary-font);
   }
 }
 
 .categoryLabel {
-  font-size: 13px;
-  display: block;
-  .mixin-ellipsis-1();
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .content {
