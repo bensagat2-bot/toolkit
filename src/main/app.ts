@@ -79,8 +79,8 @@ export default async () => {
       shouldUseDarkColors: nativeTheme.shouldUseDarkColors,
       theme: { id: 'default', name: 'default', isDark: false, colors: {} },
     },
-    dataPath: path.join(app.getPath('userData'), 'data'),
   }
+  global.lxDataPath = path.join(app.getPath('userData'), 'data')
 
   initSetting()
 

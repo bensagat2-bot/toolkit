@@ -6,7 +6,7 @@ const noop = () => {}
 
 export default () => {
   mainHandle<string, LX.UserApi.ImportUserApi>(WIN_MAIN_RENDERER_EVENT_NAME.import_user_api, async({ params: script }) => {
-    return { apiInfo: { id: '', name: '', enable: false, api: null, allowShowUpdateAlert: true }, apiList: [] }
+    return { apiInfo: { id: '', name: '', description: '', allowShowUpdateAlert: true }, apiList: [] }
   })
 
   mainHandle<string[], LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.remove_user_api, async({ params: apiIds }) => {
@@ -22,7 +22,7 @@ export default () => {
   })
 
   mainHandle<any, LX.UserApi.UserApiStatus>(WIN_MAIN_RENDERER_EVENT_NAME.get_user_api_status, async() => {
-    return { status: 'disable' as const, isEnable: false }
+    return { status: false, message: 'User API not available' }
   })
 
   mainHandle<LX.UserApi.UserApiSetAllowUpdateAlertParams, void>(WIN_MAIN_RENDERER_EVENT_NAME.user_api_set_allow_update_alert, async({ params: { id, enable } }) => {
