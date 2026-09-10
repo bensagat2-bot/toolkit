@@ -1,5 +1,13 @@
 import log from 'electron-log/node'
+import { BrowserWindow } from 'electron'
 
+
+export function send(channel: string, ...args: any[]) {
+  const win = BrowserWindow.getFocusedWindows()[0] || BrowserWindow.getAllWindows()[0]
+  if (win) {
+    win.webContents.send(channel, ...args)
+  }
+}
 
 export const isLinux = process.platform == 'linux'
 export const isWin = process.platform == 'win32'
