@@ -16,36 +16,31 @@
       </ul>
     </div>
     <div :class="$style.content">
-      <div :class="$style.grid">
-        <div
+      <ul :class="$style.grid">
+        <li
           v-for="driver in filteredDrivers"
           :key="driver.name"
-          :class="$style.card"
+          :class="$style.item"
         >
-          <div :class="$style.cardIcon">
-            <img v-if="driver.image" :src="driver.image" :alt="driver.name">
-            <svg v-else viewBox="0 0 24 24" fill="currentColor">
-              <path d="M20 6h-4V4c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6 0h-4V4h4v2zm2 12H8V8h8v10z"/>
-            </svg>
+          <div :class="$style.left" :style="{ backgroundColor: thumbColor(driver.tag) }">
+            <span :class="$style.thumbTag">{{ driver.tag }}</span>
           </div>
-          <div :class="$style.cardContent">
-            <div :class="$style.cardHeader">
-              <h3 :class="$style.cardName">{{ driver.name }}</h3>
+          <div :class="$style.right">
+            <h4 :class="$style.cardName">{{ driver.name }}</h4>
+            <div :class="$style.songlistInfo">
               <span v-if="driver.recommended" :class="$style.recommendedBadge">Recommended</span>
+              <span :class="$style.tagBadge">{{ driver.tag }}</span>
             </div>
             <p :class="$style.cardDesc">{{ driver.description }}</p>
-            <div :class="$style.cardFooter">
-              <span :class="$style.tagBadge">{{ driver.tag }}</span>
-              <button :class="$style.downloadBtn" @click="downloadDriver(driver)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-                </svg>
-                Download
-              </button>
-            </div>
+            <button :class="$style.downloadBtn" @click="downloadDriver(driver)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+              </svg>
+              Download
+            </button>
           </div>
-        </div>
-      </div>
+        </li>
+      </ul>
     </div>
   </div>
 </template>
@@ -381,11 +376,26 @@ export default {
       sendIpcToMain('util-open-url', driver.url)
     }
 
+    const thumbColor = (tag: string): string => {
+      const palette = [
+        'var(--color-primary)',
+        'var(--color-primary-dark-300)',
+        'var(--color-badge-secondary)',
+        'var(--color-badge-tertiary)',
+        'var(--color-primary-dark-500)',
+        'var(--color-primary-dark-700)',
+      ]
+      let hash = 0
+      for (const char of tag) hash = (hash * 31 + char.charCodeAt(0)) % 997
+      return palette[hash % palette.length]
+    }
+
     return {
       categories,
       selectedCategory,
       filteredDrivers,
       downloadDriver,
+      thumbColor,
     }
   },
 }
@@ -457,68 +467,58 @@ export default {
 .content {
   flex: auto;
   overflow-y: auto;
-  padding: 20px;
+  padding: 0 15px;
   background-color: var(--color-main-background);
+  font-size: 14px;
+  box-sizing: border-box;
 }
 
 .grid {
   display: flex;
   flex-flow: row wrap;
-  justify-content: flex-start;
-  gap: 16px;
+  justify-content: space-between;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.card {
-  width: calc(33.333% - 12px);
-  min-width: 280px;
-  background-color: var(--color-secondary-background);
-  border-radius: 8px;
+.item {
+  width: 32%;
+  box-sizing: border-box;
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  transition: transform 0.2s, box-shadow 0.2s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  
+  margin-top: 15px;
+  cursor: pointer;
+  transition: opacity .4s ease;
+
   &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    opacity: .7;
   }
 }
 
-.cardIcon {
-  width: 100%;
-  height: 100px;
+.left {
+  flex: none;
+  width: 88px;
+  height: 88px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: var(--color-primary-background);
-  color: var(--color-primary);
-  
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  
-  svg {
-    width: 48px;
-    height: 48px;
-    opacity: 0.7;
-  }
+  border-radius: 4px;
+  overflow: hidden;
+  opacity: .9;
 }
 
-.cardContent {
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
+.thumbTag {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.right {
   flex: auto;
-}
-
-.cardHeader {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 8px;
+  min-width: 0;
+  padding: 3px 15px 5px 7px;
+  overflow: hidden;
 }
 
 .cardName {
@@ -526,8 +526,31 @@ export default {
   font-weight: 500;
   color: var(--color-font);
   margin: 0;
-  flex: auto;
-  .mixin-ellipsis-2();
+  height: 2.6em;
+  line-height: 1.3;
+  text-align: justify;
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: normal !important;
+  text-overflow: ellipsis;
+  word-break: break-all;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.songlistInfo {
+  display: flex;
+  flex-flow: row nowrap;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.2;
+  align-items: center;
+  color: var(--color-font-label);
+
+  svg {
+    margin-right: 2px;
+  }
 }
 
 .recommendedBadge {
@@ -540,50 +563,50 @@ export default {
   white-space: nowrap;
 }
 
+.tagBadge {
+  font-size: 11px;
+  padding: 2px 8px;
+  background-color: var(--color-button-background);
+  color: var(--color-font-label);
+  border-radius: 4px;
+}
+
 .cardDesc {
   font-size: 12px;
   color: var(--color-font-label);
   line-height: 1.4;
-  margin: 0 0 12px;
-  flex: auto;
-  .mixin-ellipsis-3();
-}
-
-.cardFooter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: auto;
-}
-
-.tagBadge {
-  font-size: 11px;
-  padding: 3px 8px;
-  background-color: var(--color-button-background);
-  color: var(--color-font-label);
-  border-radius: 4px;
+  margin: 6px 0 0;
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: normal !important;
+  text-overflow: ellipsis;
+  word-break: break-all;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .downloadBtn {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  background-color: var(--color-primary);
-  color: var(--color-primary-font);
-  border: none;
+  margin-top: 8px;
+  padding: 5px 12px;
+  background: none;
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
   border-radius: 4px;
   font-size: 12px;
   cursor: pointer;
-  transition: opacity 0.2s;
-  
+  transition: background-color 0.2s, color 0.2s;
+
   &:hover {
-    opacity: 0.8;
+    background-color: var(--color-primary);
+    color: var(--color-primary-font);
   }
-  
+
   svg {
-    width: 14px;
-    height: 14px;
+    width: 13px;
+    height: 13px;
   }
 }
 </style>
