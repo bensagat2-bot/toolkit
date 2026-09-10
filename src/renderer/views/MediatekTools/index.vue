@@ -154,10 +154,10 @@
       </div>
     </div>
 
-    <div class="command-output" v-if="commandOutput">
+    <div v-if="commandOutput" class="command-output">
       <div class="output-header">
         <span>Command Output</span>
-        <button @click="clearOutput" class="clear-btn">Clear</button>
+        <button class="clear-btn" @click="clearOutput">Clear</button>
       </div>
       <pre>{{ commandOutput }}</pre>
     </div>

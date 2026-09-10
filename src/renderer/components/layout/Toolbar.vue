@@ -24,7 +24,7 @@ import { isFullscreen } from '@renderer/store'
 
 const route = useRoute()
 
-const pageTitle = computed(() => (route.meta.name as string) ?? 'V1Per')
+const pageTitle = computed(() => route.meta.name ?? 'V1Per')
 const pageTitleClass = 'page-title'
 </script>
 
