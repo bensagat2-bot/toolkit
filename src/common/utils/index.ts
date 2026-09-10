@@ -3,7 +3,7 @@ import { BrowserWindow } from 'electron'
 
 
 export function send(channel: string, ...args: any[]) {
-  const win = BrowserWindow.getFocusedWindows()[0] || BrowserWindow.getAllWindows()[0]
+  const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
   if (win) {
     win.webContents.send(channel, ...args)
   }
