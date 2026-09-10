@@ -17,7 +17,7 @@ electronDebug({
 
 // Install `vue-devtools`
 app.on('ready', () => {
-  global.lx.event_app.on('main_window_created', (win) => {
+  global.lx.event_app.on('main_window_created', (win: any) => {
     openDevTools(win.webContents)
     installExtension(VUEJS_DEVTOOLS, { session: win.webContents.session })
       .then((name: string) => {
@@ -27,7 +27,7 @@ app.on('ready', () => {
         console.log('[main window] An error occurred: ', err)
       })
   })
-  global.lx.event_app.on('desktop_lyric_window_created', (win) => {
+  global.lx.event_app.on('desktop_lyric_window_created', (win: any) => {
     openDevTools(win.webContents)
     installExtension(VUEJS_DEVTOOLS, { session: win.webContents.session })
       .then((name: string) => {

@@ -1,16 +1,5 @@
 import { mainHandle } from '@common/mainIpc'
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
-import {
-  startServer,
-  stopServer,
-  getServerStatus,
-  generateCode,
-  connectServer,
-  disconnectServer,
-  getClientStatus,
-  getServerDevices,
-  removeServerDevice,
-} from '@main/modules/sync'
 import { sendEvent } from '../main'
 
 
@@ -20,29 +9,21 @@ export default () => {
   mainHandle<LX.Sync.SyncServiceActions, any>(WIN_MAIN_RENDERER_EVENT_NAME.sync_action, async({ params: data }) => {
     switch (data.action) {
       case 'enable_server':
-        data.data.enable ? await startServer(parseInt(data.data.port)) : await stopServer()
-        return
       case 'enable_client':
-        data.data.enable ? await connectServer(data.data.host, data.data.authCode) : await disconnectServer()
-        return
-      case 'get_server_status': return getServerStatus()
-      case 'get_client_status': return getClientStatus()
-      case 'generate_code': return generateCode()
+      case 'get_server_status':
+      case 'get_client_status':
+      case 'generate_code':
       case 'select_mode':
-        if (selectModeListenr) {
-          selectModeListenr(data.data.mode)
-          selectModeListenr = null
-        }
-        break
+        return { enabled: false }
       default:
         break
     }
   })
   mainHandle<never, LX.Sync.ServerDevices>(WIN_MAIN_RENDERER_EVENT_NAME.sync_get_server_devices, async() => {
-    return getServerDevices()
+    return { list: [] }
   })
   mainHandle<string>(WIN_MAIN_RENDERER_EVENT_NAME.sync_remove_server_device, async({ params: clientId }) => {
-    await removeServerDevice(clientId)
+    return
   })
 }
 

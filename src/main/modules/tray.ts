@@ -344,7 +344,7 @@ const init = () => {
 }
 
 export default () => {
-  global.lx.event_app.on('updated_config', (keys, setting) => {
+  global.lx.event_app.on('updated_config', (keys: any, setting: any) => {
     if (!watchConfigKeys.some(key => keys.includes(key))) return
 
     if (keys.includes('common.langId')) i18n.setLang(setting['common.langId'])
@@ -381,43 +381,5 @@ export default () => {
   global.lx.event_app.on('system_theme_change', () => {
     if (global.lx.appSetting['tray.themeId'] != TRAY_AUTO_ID) return
     setTrayImage(global.lx.appSetting['tray.themeId'])
-  })
-
-  global.lx.event_app.on('player_status', (status) => {
-    let updated = false
-    if (status.status) {
-      switch (status.status) {
-        case 'paused':
-          playerState.play = false
-          playerState.empty &&= false
-          setLyric('')
-          break
-        case 'error':
-          playerState.play = false
-          playerState.empty &&= false
-          setLyric('')
-          break
-        case 'playing':
-          playerState.play = true
-          playerState.empty &&= false
-          setLyric(global.lx.player_status.lyricLineText)
-          break
-        case 'stoped':
-          playerState.play &&= false
-          playerState.empty = true
-          setLyric('')
-          break
-      }
-      updated = true
-    } else {
-      setLyric(status.lyricLineText)
-    }
-    if (status.name != null) setTip()
-    if (status.singer != null) setTip()
-    if (status.collect != null) {
-      playerState.collect = status.collect
-      updated = true
-    }
-    if (updated) init()
   })
 }

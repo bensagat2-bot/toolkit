@@ -1,47 +1,39 @@
 import { WIN_MAIN_RENDERER_EVENT_NAME } from '@common/ipcNames'
 import { mainHandle } from '@common/mainIpc'
-import {
-  getApiList,
-  importApi,
-  removeApi,
-  setApi,
-  getStatus,
-  request,
-  cancelRequest,
-  setAllowShowUpdateAlert,
-} from '@main/modules/userApi'
 import { sendEvent } from '@main/modules/winMain/main'
+
+const noop = () => {}
 
 export default () => {
   mainHandle<string, LX.UserApi.ImportUserApi>(WIN_MAIN_RENDERER_EVENT_NAME.import_user_api, async({ params: script }) => {
-    return importApi(script)
+    return { success: false, message: 'User API not available' }
   })
 
   mainHandle<string[], LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.remove_user_api, async({ params: apiIds }) => {
-    return removeApi(apiIds)
+    return []
   })
 
   mainHandle<LX.UserApi.UserApiSetApiParams>(WIN_MAIN_RENDERER_EVENT_NAME.set_user_api, async({ params: apiId }) => {
-    await setApi(apiId)
+    return
   })
 
   mainHandle<LX.UserApi.UserApiInfo[]>(WIN_MAIN_RENDERER_EVENT_NAME.get_user_api_list, async() => {
-    return getApiList()
+    return []
   })
 
   mainHandle<LX.UserApi.UserApiStatus>(WIN_MAIN_RENDERER_EVENT_NAME.get_user_api_status, async() => {
-    return getStatus()
+    return { isEnable: false }
   })
 
   mainHandle<LX.UserApi.UserApiSetAllowUpdateAlertParams>(WIN_MAIN_RENDERER_EVENT_NAME.user_api_set_allow_update_alert, async({ params: { id, enable } }) => {
-    setAllowShowUpdateAlert(id, enable)
+    noop()
   })
 
   mainHandle<LX.UserApi.UserApiRequestParams>(WIN_MAIN_RENDERER_EVENT_NAME.request_user_api, async({ params }) => {
-    return request(params)
+    return { success: false, message: 'User API not available' }
   })
   mainHandle<LX.UserApi.UserApiRequestCancelParams>(WIN_MAIN_RENDERER_EVENT_NAME.request_user_api_cancel, async({ params: requestKey }) => {
-    cancelRequest(requestKey)
+    noop()
   })
 }
 
