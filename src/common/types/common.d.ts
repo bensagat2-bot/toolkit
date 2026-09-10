@@ -112,4 +112,21 @@ declare namespace LX {
     version: string
     desc: string
   }
+
+  interface Player {
+    StatusButtonActions: 'play' | 'pause' | 'prev' | 'next' | 'collect' | 'unCollect'
+    Status: {
+      isPlaying: boolean
+      playState: string
+    }
+    SavedPlayInfo: {
+      listId: string
+      index: number
+      progress: number
+    }
+    LyricInfo: {
+      lyric: string
+      tlyric: string
+    }
+  }
 }
