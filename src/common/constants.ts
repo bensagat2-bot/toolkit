@@ -56,8 +56,8 @@ export const DEFAULT_SETTING = {
     themeId: 0,
   },
   'theme': {
-    id: 'default',
-    lightId: 'default-light',
-    darkId: 'default-dark',
+    id: 'green',
+    lightId: 'green',
+    darkId: 'black',
   },
 }

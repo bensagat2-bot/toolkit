@@ -16,9 +16,9 @@ const defaultSetting: LX.AppSetting = {
   'network.proxy.port': '',
   'tray.enable': false,
   'tray.themeId': 0,
-  'theme.id': 'default',
-  'theme.lightId': 'default',
-  'theme.darkId': 'dark',
+  'theme.id': 'green',
+  'theme.lightId': 'green',
+  'theme.darkId': 'black',
 }
 
 export default defaultSetting

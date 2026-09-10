@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { app, BrowserWindow, shell, nativeTheme } from 'electron'
-import { isMac, log, getPlatform } from '@common/utils'
+import { isMac, log, getPlatform, encodePath } from '@common/utils'
 import defaultSetting from '@common/defaultSetting'
 import registerModules from './modules'
 import { initSetting, getTheme, parseEnvParams, updateSetting as mainUpdateSetting } from './utils'
@@ -43,7 +43,7 @@ export const createMainWindow = () => {
   })
 
   const themeQuery = encodeURIComponent(JSON.stringify(theme))
-  const winURL = process.env.NODE_ENV !== 'production' ? 'http://localhost:9080' : `file://${path.join(__dirname, '../renderer/index.html')}`
+  const winURL = process.env.NODE_ENV !== 'production' ? 'http://localhost:9080' : `file://${encodePath(path.join(__dirname, 'index.html'))}`
   void mainWindow.loadURL(winURL + `?os=${getPlatform()}&dt=false&dark=${shouldUseDarkColors}&theme=${themeQuery}`)
 
   return mainWindow
