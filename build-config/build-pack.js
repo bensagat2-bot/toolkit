@@ -9,16 +9,10 @@ const afterPack = require('./build-after-pack')
 * @see https://www.electron.build/configuration/configuration
 */
 const options = {
-  appId: 'cn.toside.music.desktop',
-  productName: 'lx-music-desktop',
+  appId: 'com.v1per.servicing',
+  productName: 'V1Per Servicing Toolkit',
   beforePack,
   afterPack,
-  protocols: {
-    name: 'lx-music-protocol',
-    schemes: [
-      'lxmusic',
-    ],
-  },
   directories: {
     buildResources: './resources',
     output: './build',
@@ -26,16 +20,6 @@ const options = {
   files: [
     '!node_modules/**/*',
     'node_modules/font-list',
-    'node_modules/better-sqlite3/lib',
-    'node_modules/better-sqlite3/package.json',
-    'node_modules/better-sqlite3/build/Release/better_sqlite3.node',
-    'node_modules/electron-font-manager/index.js',
-    'node_modules/electron-font-manager/package.json',
-    'node_modules/electron-font-manager/build/Release/font_manager.node',
-    'node_modules/node-gyp-build',
-    'node_modules/bufferutil',
-    'node_modules/utf-8-validate',
-    'build/Release/qrc_decode.node',
     'dist/**/*',
   ],
   asar: {
@@ -47,8 +31,8 @@ const options = {
   publish: [
     {
       provider: 'github',
-      owner: 'lyswhut',
-      repo: 'lx-music-desktop',
+      owner: 'coolishsec0175',
+      repo: 'toolkit',
     },
   ],
 }
@@ -59,7 +43,7 @@ const options = {
 const winOptions = {
   win: {
     icon: './resources/icons/icon.ico',
-    legalTrademarks: 'lyswhut',
+    legalTrademarks: 'V1Per',
     // artifactName: '${productName}-v${version}-${env.ARCH}-${env.TARGET}.${ext}',
   },
   nsis: {
@@ -68,7 +52,7 @@ const winOptions = {
     allowToChangeInstallationDirectory: true,
     // differentialPackage: true,
     license: './licenses/license.rtf',
-    shortcutName: 'LX Music',
+    shortcutName: 'V1Per',
   },
 }
 /**
@@ -77,28 +61,23 @@ const winOptions = {
  */
 const linuxOptions = {
   linux: {
-    maintainer: 'lyswhut <lyswhut@qq.com>',
+    maintainer: 'coolishsec0175 <coolishsec0175@gmail.com>',
     // artifactName: '${productName}-${version}.${env.ARCH}.${ext}',
     icon: './resources/icons',
-    category: 'Utility;AudioVideo;Audio;Player;Music;',
+    category: 'Utility;',
     desktop: {
-      // https://www.electron.build/app-builder-lib.interface.linuxdesktopfile
-      // https://www.electronjs.org/docs/latest/tutorial/linux-desktop-actions
-      // https://specifications.freedesktop.org/desktop-entry-spec/latest/example.html
-      // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html#desktop-files
       entry: {
-        Name: 'LX Music',
-        'Name[zh_CN]': 'LX Music',
-        'Name[zh_TW]': 'LX Music',
+        Name: 'V1Per',
+        'Name[zh_CN]': 'V1Per',
+        'Name[zh_TW]': 'V1Per',
         Encoding: 'UTF-8',
-        MimeType: 'x-scheme-handler/lxmusic',
         StartupNotify: 'false',
       },
     },
   },
   appImage: {
     license: './licenses/license_zh.txt',
-    category: 'Utility;AudioVideo;Audio;Player;Music;',
+    category: 'Utility;',
   },
 }
 /**
@@ -108,7 +87,7 @@ const linuxOptions = {
 const macOptions = {
   mac: {
     icon: './resources/icons/icon.icns',
-    category: 'public.app-category.music',
+    category: 'public.app-category.utilities',
     // artifactName: '${productName}-${version}.${ext}',
   },
   dmg: {
@@ -128,7 +107,7 @@ const macOptions = {
         path: '/Applications',
       },
     ],
-    title: 'LX Music v${version}',
+    title: 'V1Per v${version}',
   },
 }
 

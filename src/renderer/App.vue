@@ -28,6 +28,13 @@
           </svg>
           <span>Utilities</span>
         </router-link>
+        <router-link to="/drivers" class="nav-item" active-class="active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M3 9h18M9 3v18" />
+          </svg>
+          <span>Drivers</span>
+        </router-link>
       </nav>
       <div class="nav-bottom">
         <router-link to="/setting" class="nav-item" active-class="active">
@@ -46,9 +53,6 @@
 </template>
 
 <script setup>
-import useApp from '@renderer/core/useApp'
-
-useApp()
 </script>
 
 <style lang="less">

@@ -1,48 +1,39 @@
-// import { getListFromState } from './list'
-// import { downloadList } from './download'
+import { getThemes as getThemesFromIpc } from '@renderer/utils/ipc'
+import { isUrl, encodePath } from '@common/utils/common'
+import { themeInfo, themeShouldUseDarkColors } from './index'
 
+let themesData: LX.ThemeInfo | null = null
 
-// export const getList = (listId: string | null): LX.Download.ListItem[] | LX.Music.MusicInfo[] => {
-//   return listId == 'download' ? downloadList : getListFromState(listId)
-// }
-import { encodePath, isUrl } from '@common/utils/common'
-import { joinPath } from '@common/utils/nodejs'
-import { markRaw, shallowReactive } from '@common/utils/vueTools'
-import { getThemes as getTheme } from '@renderer/utils/ipc'
-import { qualityList, themeInfo, themeShouldUseDarkColors } from './index'
-
-export const assertApiSupport = (source: LX.Source): boolean => {
-  return source == 'local' || qualityList.value[source] != null
+export const findTheme = (info: LX.ThemeInfo, id: string): LX.Theme | undefined => {
+  return info.themes.find(theme => theme.id == id) ?? info.userThemes.find(theme => theme.id == id)
 }
 
-export const buildBgUrl = (originUrl: string, dataPath: string): string => {
-  return isUrl(originUrl)
-    ? `url(${originUrl})`
-    : `url(file:///${encodePath(joinPath(dataPath, originUrl).replaceAll('\\', '/'))})`
-}
-
-export const getThemes = (callback: (themeInfo: LX.ThemeInfo) => void) => {
-  if (themeInfo.themes.length) {
-    callback(themeInfo)
-    return
-  }
-  void getTheme().then(info => {
-    themeInfo.themes = markRaw(info.themes)
-    themeInfo.userThemes = shallowReactive(info.userThemes)
+export const getThemes = (callback?: (info: LX.ThemeInfo) => void): Promise<LX.ThemeInfo> => {
+  return getThemesFromIpc().then(info => {
+    themesData = info
+    themeInfo.themes = info.themes
+    themeInfo.userThemes = info.userThemes
     themeInfo.dataPath = info.dataPath
-    callback(themeInfo)
+    callback?.(info)
+    return info
   })
 }
-export const buildThemeColors = (theme: LX.Theme, dataPath: string) => {
-  if (theme.isCustom && theme.config.extInfo['--background-image'] != 'none') {
-    theme = copyTheme(theme)
-    theme.config.extInfo['--background-image'] = buildBgUrl(theme.config.extInfo['--background-image'], dataPath)
-  }
+
+export const buildBgUrl = (imageName: string, dataPath: string): string => {
+  return isUrl(imageName)
+    ? `url(${imageName})`
+    : `url(file:///${encodePath(dataPath)}/${encodePath(imageName)})`
+}
+
+export const buildThemeColors = (theme: LX.Theme, dataPath: string): Record<string, string> => {
   const colors: Record<string, string> = {
     ...theme.config.themeColors,
     ...theme.config.extInfo,
   }
-
+  const bg = theme.config.extInfo['--background-image']
+  if (bg && bg != 'none' && !isUrl(bg) && !bg.startsWith('url(')) {
+    colors['--background-image'] = buildBgUrl(bg, dataPath)
+  }
   return colors
 }
 
@@ -57,26 +48,20 @@ export const copyTheme = (theme: LX.Theme): LX.Theme => {
   }
 }
 
-export const findTheme = (themeInfo: LX.ThemeInfo, id: string): LX.Theme | undefined => {
-  let theme = themeInfo.themes.find(theme => theme.id == id)
-  if (theme) return theme
-  theme = themeInfo.userThemes.find(theme => theme.id == id)
-  return theme
-}
-
 export const applyTheme = (id: string, lightId: string, darkId: string, dataPath: string) => {
-  getThemes((themeInfo) => {
-    let themeId = id == 'auto'
-      ? themeShouldUseDarkColors.value
-        ? darkId
-        : lightId
-      : id
-
-    let theme = findTheme(themeInfo, themeId)
-    if (!theme) {
-      themeId = id == 'auto' && themeShouldUseDarkColors.value ? 'black' : 'green'
-      theme = themeInfo.themes.find(theme => theme.id == themeId)!
-    }
-    window.setTheme(buildThemeColors(theme, dataPath))
-  })
+  if (!themesData) return
+  themeId.value = id
+  let theme: LX.Theme | undefined
+  if (id == 'auto') {
+    const light = findTheme(themesData, lightId)
+    const dark = findTheme(themesData, darkId)
+    theme = themeShouldUseDarkColors.value ? dark ?? light : light ?? dark
+  } else {
+    theme = findTheme(themesData, id)
+  }
+  if (!theme) return
+  window.setTheme(buildThemeColors(theme, dataPath))
+  themeInfo.id = theme.id
+  themeInfo.name = theme.name
+  themeInfo.isDark = theme.isDark
 }

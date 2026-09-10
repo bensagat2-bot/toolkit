@@ -1,11 +1,9 @@
-import { encodePath, isUrl, throttle, isMac } from '@common/utils'
+import { encodePath, isUrl, isMac } from '@common/utils'
 import migrateSetting from '@common/utils/migrateSetting'
 import getStore from '@main/utils/store'
 import { STORE_NAMES, URL_SCHEME_RXP } from '@common/constants'
 import defaultSetting from '@common/defaultSetting'
-import defaultHotKey from '@common/defaultHotKey'
-import { migrateHotKey, migrateUserApi, parseDataFile } from './migrate'
-import { nativeTheme, powerSaveBlocker } from 'electron'
+import { nativeTheme } from 'electron'
 import { joinPath } from '@common/utils/nodejs'
 import themes from '@common/theme/index.json'
 
@@ -35,25 +33,6 @@ export const parseEnvParams = (argv = process.argv): { cmdParams: LX.CmdParams, 
 
 const primitiveType = ['string', 'boolean', 'number']
 const checkPrimitiveType = (val: any): boolean => val === null || primitiveType.includes(typeof val)
-// const handleMergeSetting = (defaultSetting: LX.AppSetting, currentSetting: Partial<LX.AppSetting>) => {
-//   const updatedSettingKeys: Array<keyof LX.AppSetting> = []
-//   for (const key of Object.keys(defaultSetting) as Array<keyof LX.AppSetting>) {
-//     const currentValue: any = currentSetting[key]
-//     const isPrimitive = checkPrimitiveType(currentValue)
-//     // if (checkPrimitiveType(value)) {
-//     if (!isPrimitive) continue
-//     updatedSettingKeys.push(key)
-//     // @ts-expect-error
-//     defaultSetting[key] = currentValue
-//     // } else {
-//     //   if (!isPrimitive && currentValue != undefined) handleMergeSetting(value, currentValue)
-//     // }
-//   }
-//   return {
-//     setting: defaultSetting,
-//     updatedSettingKeys,
-//   }
-// }
 
 export const mergeSetting = (originSetting: LX.AppSetting, targetSetting?: Partial<LX.AppSetting> | null): {
   setting: LX.AppSetting
@@ -61,7 +40,6 @@ export const mergeSetting = (originSetting: LX.AppSetting, targetSetting?: Parti
   updatedSetting: Partial<LX.AppSetting>
 } => {
   let originSettingCopy: LX.AppSetting = { ...originSetting }
-  // const defaultVersion = targetSettingCopy.version
   const updatedSettingKeys: Array<keyof LX.AppSetting> = []
   const updatedSetting: Partial<LX.AppSetting> = {}
 
@@ -73,29 +51,21 @@ export const mergeSetting = (originSetting: LX.AppSetting, targetSetting?: Parti
       for (const key of targetSettingKeys as Array<keyof LX.AppSetting>) {
         const targetValue: any = targetSetting[key]
         const isPrimitive = checkPrimitiveType(targetValue)
-        // if (checkPrimitiveType(value)) {
         if (!isPrimitive || targetValue == originSettingCopy[key] || originSettingCopy[key] === undefined) continue
         updatedSettingKeys.push(key)
         updatedSetting[key] = targetValue
         // @ts-expect-error
         originSettingCopy[key] = targetValue
-        // } else {
-        //   if (!isPrimitive && currentValue != undefined) handleMergeSetting(value, currentValue)
-        // }
       }
     } else {
       for (const key of originSettingKeys as Array<keyof LX.AppSetting>) {
         const targetValue: any = targetSetting[key]
         const isPrimitive = checkPrimitiveType(targetValue)
-        // if (checkPrimitiveType(value)) {
         if (!isPrimitive || targetValue == originSettingCopy[key]) continue
         updatedSettingKeys.push(key)
         updatedSetting[key] = targetValue
         // @ts-expect-error
         originSettingCopy[key] = targetValue
-        // } else {
-        //   if (!isPrimitive && currentValue != undefined) handleMergeSetting(value, currentValue)
-        // }
       }
     }
   }
@@ -107,19 +77,12 @@ export const mergeSetting = (originSetting: LX.AppSetting, targetSetting?: Parti
   }
 }
 
-const applyInitSetting = (setting: LX.AppSetting) => {
-  if (global.envParams.cmdParams.hidden && !setting['tray.enable']) {
-    setting['tray.enable'] = true
-  }
-}
-
 export const updateSetting = (setting?: Partial<LX.AppSetting>, isInit: boolean = false) => {
   const electronStore_config = getStore(STORE_NAMES.APP_SETTINGS)
 
   let originSetting: LX.AppSetting
   if (isInit) {
     setting &&= migrateSetting(setting)
-    applyInitSetting(setting as LX.AppSetting)
     originSetting = { ...defaultSetting }
   } else originSetting = global.lx.appSetting
 
@@ -136,68 +99,8 @@ export const updateSetting = (setting?: Partial<LX.AppSetting>, isInit: boolean 
  */
 export const initSetting = async() => {
   const electronStore_config = getStore(STORE_NAMES.APP_SETTINGS)
-
   let setting = electronStore_config.get('setting') as LX.AppSetting | undefined
-
-  // migrate setting
-  if (!setting) {
-    const config = await parseDataFile<{ setting?: any }>('config.json')
-    if (config?.setting) setting = config.setting as LX.AppSetting
-    await migrateUserApi()
-  }
-
-  // console.log(setting)
   return updateSetting(setting, true)
-}
-
-/**
- * 初始化快捷键设置
- */
-export const initHotKey = async() => {
-  const electronStore_hotKey = getStore(STORE_NAMES.HOTKEY)
-
-  let localConfig = electronStore_hotKey.get('local') as LX.HotKeyConfig | null
-  let globalConfig = electronStore_hotKey.get('global') as LX.HotKeyConfig | null
-
-  if (globalConfig) {
-    // 移除v2.2.0及之前设置的全局媒体快捷键注册
-    if (globalConfig.keys.MediaPlayPause) {
-      delete globalConfig.keys.MediaPlayPause
-      delete globalConfig.keys.MediaNextTrack
-      delete globalConfig.keys.MediaPreviousTrack
-      electronStore_hotKey.set('global', globalConfig)
-    }
-  } else {
-    // migrate hotKey
-    const config = await migrateHotKey()
-    if (config) {
-      localConfig = config.local
-      globalConfig = config.global
-    } else {
-      localConfig = JSON.parse(JSON.stringify(defaultHotKey.local))
-      globalConfig = JSON.parse(JSON.stringify(defaultHotKey.global))
-    }
-
-    electronStore_hotKey.set('local', localConfig)
-    electronStore_hotKey.set('global', globalConfig)
-  }
-
-  return {
-    local: localConfig!,
-    global: globalConfig!,
-  }
-}
-
-type HotKeyType = 'local' | 'global'
-
-const saveHotKeyConfig = throttle<[LX.HotKeyConfigAll]>((config: LX.HotKeyConfigAll) => {
-  for (const key of Object.keys(config) as HotKeyType[]) {
-    global.lx.hotKey.config[key] = config[key]
-    getStore(STORE_NAMES.HOTKEY).set(key, config[key])
-  }
-})
-export const saveAppHotKeyConfig = (config: LX.HotKeyConfigAll) => {
-  saveHotKeyConfig(config)
 }
 
 export const openDevTools = (webContents: Electron.WebContents) => {
@@ -206,6 +109,15 @@ export const openDevTools = (webContents: Electron.WebContents) => {
   })
 }
 
+export const getSystemFonts = async(): Promise<string[]> => {
+  try {
+    const { getFonts } = await import('font-list')
+    return await getFonts()
+  } catch (err) {
+    console.error(err)
+    return []
+  }
+}
 
 let userThemes: LX.Theme[]
 export const getAllThemes = () => {
@@ -241,17 +153,14 @@ const copyTheme = (theme: LX.Theme): LX.Theme => {
     },
   }
 }
+
 export const getTheme = () => {
-  // fs.promises.readdir()
   const shouldUseDarkColors = nativeTheme.shouldUseDarkColors
   let themeId = global.lx.appSetting['theme.id'] == 'auto'
     ? shouldUseDarkColors
       ? global.lx.appSetting['theme.darkId']
       : global.lx.appSetting['theme.lightId']
     : global.lx.appSetting['theme.id']
-  // themeId = 'naruto'
-  // themeId = 'pink'
-  // themeId = 'black'
   let theme = themes.find(theme => theme.id == themeId)
   if (!theme) {
     userThemes = getStore(STORE_NAMES.THEME).get('themes') as LX.Theme[] | null ?? []
@@ -289,6 +198,7 @@ export const getTheme = () => {
 
 let powerSaveBlockerId: number | null = null
 export const setPowerSaveBlocker = (enabled: boolean) => {
+  const { powerSaveBlocker } = require('electron') as typeof import('electron')
   let isEnabled = powerSaveBlockerId != null && powerSaveBlocker.isStarted(powerSaveBlockerId)
   if (enabled) {
     if (isEnabled) return
@@ -298,32 +208,4 @@ export const setPowerSaveBlocker = (enabled: boolean) => {
     powerSaveBlocker.stop(powerSaveBlockerId!)
     powerSaveBlockerId = null
   }
-}
-
-
-let envProxy: null | { host: string, port: number } = null
-export const getProxy = () => {
-  if (global.lx.appSetting['network.proxy.enable'] && global.lx.appSetting['network.proxy.host']) {
-    return {
-      host: global.lx.appSetting['network.proxy.host'],
-      port: parseInt(global.lx.appSetting['network.proxy.port'] || '80'),
-    }
-  }
-  if (envProxy) {
-    return {
-      host: envProxy.host,
-      port: envProxy.port,
-    }
-  } else {
-    const envProxyStr = envParams.cmdParams['proxy-server']
-    if (envProxyStr && typeof envProxyStr == 'string') {
-      const [host, port = ''] = envProxyStr.split(':')
-      return envProxy = {
-        host,
-        port: parseInt(port || '80'),
-      }
-    }
-  }
-
-  return null
 }

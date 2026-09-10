@@ -1,13 +1,8 @@
-/// <reference types="node" />
+/* eslint-disable no-var */
 
 interface Lx {
   inited: boolean
   appSetting: LX.AppSetting
-  hotKey: {
-    enable: boolean
-    config: LX.HotKeyConfigAll
-    state: LX.HotKeyState
-  }
   isSkipTrayQuit: boolean
   event_app: any
   theme: LX.ThemeSetting
@@ -25,5 +20,3 @@ declare var lxDataPath: string
 declare var lxOldDataPath: string
 declare var lx: Lx
 declare var appWorder: AppWorder
-declare var webpackStaticPath: string
-declare var webpackUserApiPath: string

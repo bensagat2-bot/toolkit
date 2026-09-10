@@ -1,20 +1,21 @@
 import path from 'node:path'
-import { app, BrowserWindow, shell, screen, nativeTheme, dialog, ipcMain } from 'electron'
-import { isMac, log } from '@common/utils'
+import { app, BrowserWindow, shell, nativeTheme } from 'electron'
+import { isMac, log, getPlatform } from '@common/utils'
 import defaultSetting from '@common/defaultSetting'
 import registerModules from './modules'
-import { initSetting } from './utils'
+import { initSetting, getTheme, parseEnvParams, updateSetting as mainUpdateSetting } from './utils'
 
 let mainWindow: BrowserWindow | null = null
 
 export const createMainWindow = () => {
-  const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize
   const wins = BrowserWindow.getAllWindows()
   if (wins.length) {
     mainWindow = wins[0]
     mainWindow.show()
     return mainWindow
   }
+
+  const { shouldUseDarkColors, theme } = global.lx.theme
 
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -23,11 +24,14 @@ export const createMainWindow = () => {
     minHeight: 600,
     show: false,
     webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegrationInWorker: true,
+      contextIsolation: false,
+      nodeIntegration: true,
+      webSecurity: false,
+      sandbox: false,
+      spellcheck: false,
     },
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1a1a1a' : '#ffffff',
+    backgroundColor: shouldUseDarkColors ? '#1a1a1a' : '#ffffff',
   })
 
   mainWindow.on('ready-to-show', () => {
@@ -38,11 +42,9 @@ export const createMainWindow = () => {
     mainWindow = null
   })
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
-  }
+  const themeQuery = encodeURIComponent(JSON.stringify(theme))
+  const winURL = process.env.NODE_ENV !== 'production' ? 'http://localhost:9080' : `file://${path.join(__dirname, '../renderer/index.html')}`
+  void mainWindow.loadURL(winURL + `?os=${getPlatform()}&dt=false&dark=${shouldUseDarkColors}&theme=${themeQuery}`)
 
   return mainWindow
 }
@@ -62,23 +64,14 @@ export const quitApp = () => {
 export default async () => {
   log.info('[V1Per] Starting V1Per app...')
 
+  const envParams = parseEnvParams()
+  global.envParams = envParams
+
   global.lx = {
     inited: false,
     isSkipTrayQuit: false,
     event_app: { on: () => {}, emit: () => {} },
-    event_list: { on: () => {}, emit: () => {} },
-    event_dislike: { on: () => {}, emit: () => {} },
-    worker: { dbService: {} } as any,
-    player_status: { status: 'stoped' } as any,
     appSetting: defaultSetting,
-    hotKey: {
-      enable: true,
-      config: {
-        local: { enable: false, keys: {} },
-        global: { enable: false, keys: {} },
-      },
-      state: new Map(),
-    },
     theme: {
       shouldUseDarkColors: nativeTheme.shouldUseDarkColors,
       theme: { id: 'default', name: 'default', isDark: false, colors: {} },
@@ -86,9 +79,17 @@ export default async () => {
   }
   global.lxDataPath = path.join(app.getPath('userData'), 'data')
 
-  initSetting()
+  const result = await initSetting()
+  global.lx.appSetting = result.setting
+
+  global.lx.theme = getTheme()
 
   registerModules()
+
+  nativeTheme.on('updated', () => {
+    global.lx.theme = getTheme()
+    mainWindow?.webContents.send('theme_change', global.lx.theme)
+  })
 
   app.whenReady().then(() => {
     log.info('[V1Per] App ready, creating window...')
@@ -105,13 +106,7 @@ export default async () => {
     showMainWindow()
   })
 
-  ipcMain.handle('app:open-external', async (_, url: string) => {
-    await shell.openExternal(url)
-  })
-
-  ipcMain.handle('app:open-path', async (_, filePath: string) => {
-    await shell.openPath(filePath)
-  })
-
   log.info('[V1Per] App initialized')
 }
+
+export { mainUpdateSetting }

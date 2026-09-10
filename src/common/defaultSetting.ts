@@ -1,35 +1,24 @@
-import path from 'node:path'
-import os from 'node:os'
-
-const isMac = process.platform == 'darwin'
-const isWin = process.platform == 'win32'
-
 const defaultSetting: LX.AppSetting = {
   version: '1.0.0',
-
   'common.windowSizeId': 3,
   'common.fontSize': 16,
   'common.startInFullscreen': false,
-  'common.langId': null,
-  'common.font': '',
+  'common.langId': 'en-us',
+  'common.font': 'Microsoft YaHei',
   'common.isShowAnimation': true,
   'common.isAgreePact': false,
-  'common.controlBtnPosition': isMac ? 'left' : 'right',
-  'common.transparentWindow': !isMac,
+  'common.controlBtnPosition': 'right',
+  'common.transparentWindow': true,
   'common.tryAutoUpdate': true,
   'common.showChangeLog': true,
-
   'network.proxy.enable': false,
   'network.proxy.host': '',
   'network.proxy.port': '',
-
   'tray.enable': false,
   'tray.themeId': 0,
-
-  'theme.id': 'green',
-  'theme.lightId': 'green',
-  'theme.darkId': 'black',
-
+  'theme.id': 'default',
+  'theme.lightId': 'default',
+  'theme.darkId': 'dark',
 }
 
 export default defaultSetting

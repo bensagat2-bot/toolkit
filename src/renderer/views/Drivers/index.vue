@@ -52,7 +52,7 @@
 
 <script lang="ts">
 import { ref, computed } from '@common/utils/vueTools'
-import { sendIpcToMain } from '@renderer/utils/tools'
+import { sendIpcToMain } from '@renderer/utils'
 
 interface Driver {
   category: string

@@ -65,6 +65,22 @@ export const WIN_MAIN_RENDERER_EVENT_NAME = {
   remove_theme: 'remove_theme',
   player_status: 'player_status',
   player_action_on_button_click: 'player_action_on_button_click',
+  save_lyric_raw: 'save_lyric_raw',
+  save_lyric_edited: 'save_lyric_edited',
+  remove_lyric_edited: 'remove_lyric_edited',
+  clear_lyric_raw: 'clear_lyric_raw',
+  clear_lyric_edited: 'clear_lyric_edited',
+  get_lyric_edited_count: 'get_lyric_edited_count',
+  get_music_url: 'get_music_url',
+  save_music_url: 'save_music_url',
+  clear_music_url: 'clear_music_url',
+  get_music_url_count: 'get_music_url_count',
+  process_new_desktop_lyric_client: 'process_new_desktop_lyric_client',
+  download_list_get: 'download_list_get',
+  download_list_add: 'download_list_add',
+  download_list_update: 'download_list_update',
+  download_list_remove: 'download_list_remove',
+  download_list_clear: 'download_list_clear',
 }
 
 export const HOTKEY_RENDERER_EVENT_NAME = {
@@ -74,6 +90,11 @@ export const HOTKEY_RENDERER_EVENT_NAME = {
   set_config: 'set_config',
   status: 'status',
   enable: 'enable',
+}
+
+export const CMMON_EVENT_NAME = {
+  ...WIN_MAIN_RENDERER_EVENT_NAME,
+  ...HOTKEY_RENDERER_EVENT_NAME,
 }
 
 export const WIN_MAIN_RENDERER_CHANNEL_NAME = WIN_MAIN_RENDERER_EVENT_NAME

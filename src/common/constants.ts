@@ -13,3 +13,51 @@ export const APP_EVENT_NAMES = {
   trayName: 'tray',
 } as const
 export const TRAY_AUTO_ID = -1
+
+export const DATA_KEYS = {
+  playInfo: 'playInfo',
+  userApi: 'userApi',
+  setting: 'setting',
+  hotKey: 'hotKey',
+  theme: 'theme',
+  sync: 'sync',
+  list: 'list',
+  search: 'search',
+} as const
+
+export const LIST_IDS = {
+  default: 'default',
+  love: 'love',
+} as const
+
+export const DEFAULT_SETTING = {
+  'common': {
+    windowSizeId: 0,
+    fontSize: 14,
+    startInFullscreen: false,
+    langId: null,
+    font: 'Microsoft YaHei',
+    isShowAnimation: true,
+    isAgreePact: false,
+    controlBtnPosition: 'left',
+    transparentWindow: false,
+    tryAutoUpdate: true,
+    showChangeLog: true,
+  },
+  'network': {
+    proxy: {
+      enable: false,
+      host: '',
+      port: '',
+    },
+  },
+  'tray': {
+    enable: true,
+    themeId: 0,
+  },
+  'theme': {
+    id: 'default',
+    lightId: 'default-light',
+    darkId: 'default-dark',
+  },
+}

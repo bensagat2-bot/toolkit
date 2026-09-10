@@ -41,12 +41,7 @@ module.exports = merge(baseConfig, {
   ],
   plugins: [
     new CopyWebpackPlugin({
-      patterns: [
-        {
-          from: path.join(__dirname, '../../src/static'),
-          to: path.join(__dirname, '../../dist/static'),
-        },
-      ],
+      patterns: [],
     }),
     new webpack.DefinePlugin({
       'process.env': {
