@@ -251,11 +251,14 @@ const clearOutput = () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
+  min-height: 40px;
+  border-bottom: 1px solid var(--color-primary-light-500);
+  padding-bottom: 10px;
 
   h2 {
-    font-size: 18px;
-    font-weight: 500;
-    color: var(--text-primary);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-font);
   }
 }
 

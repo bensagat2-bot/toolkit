@@ -21,15 +21,21 @@
       </nav>
     </aside>
     <div id="main">
-      <router-view v-slot="{ Component }">
-        <component :is="Component" class="view-container" />
-      </router-view>
+      <Toolbar />
+      <div class="main-content">
+        <router-view v-slot="{ Component }">
+          <transition name="page-fade" mode="out-in">
+            <component :is="Component" class="view-container" />
+          </transition>
+        </router-view>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
 import { onMounted, h } from 'vue'
+import Toolbar from './components/layout/Toolbar.vue'
 
 const menus = [
   {
@@ -101,6 +107,8 @@ html, body {
   display: flex;
   flex-direction: column;
   transition: background-color .4s ease;
+  -webkit-app-region: drag;
+  -webkit-user-select: none;
 }
 
 .logo {
@@ -124,6 +132,7 @@ html, body {
 .list {
   width: 100%;
   -webkit-user-select: none;
+  -webkit-app-region: no-drag;
 }
 
 .nav-item {
@@ -211,6 +220,13 @@ html, body {
   flex-flow: column nowrap;
 }
 
+.main-content {
+  position: relative;
+  flex: auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .view-container {
   position: absolute !important;
   left: 0;
@@ -218,5 +234,15 @@ html, body {
   height: 100%;
   width: 100%;
   overflow: hidden;
+}
+
+.page-fade-enter-active,
+.page-fade-leave-active {
+  transition: opacity .2s ease;
+}
+
+.page-fade-enter-from,
+.page-fade-leave-to {
+  opacity: 0;
 }
 </style>

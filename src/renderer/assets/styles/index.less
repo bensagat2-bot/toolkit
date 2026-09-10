@@ -320,6 +320,24 @@ html {
   font-size: 16px;
 }
 
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+  background-color: rgba(0, 0, 0, 0);
+}
+::-webkit-scrollbar-track {
+  background-color: var(--color-primary-light-100-alpha-800);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background-color: var(--color-primary-alpha-600);
+  transition: background-color 0.4s ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-primary-alpha-400);
+}
+
 .nobreak {
   white-space: nowrap;
 }

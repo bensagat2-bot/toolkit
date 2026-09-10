@@ -23,6 +23,8 @@ export const createMainWindow = () => {
     minWidth: 900,
     minHeight: 600,
     show: false,
+    frame: false,
+    transparent: true,
     webPreferences: {
       nodeIntegrationInWorker: true,
       contextIsolation: false,
@@ -31,7 +33,7 @@ export const createMainWindow = () => {
       sandbox: false,
       spellcheck: false,
     },
-    backgroundColor: shouldUseDarkColors ? '#1a1a1a' : '#ffffff',
+    backgroundColor: '#00000000',
   })
 
   mainWindow.on('ready-to-show', () => {
