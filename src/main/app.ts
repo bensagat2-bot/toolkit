@@ -66,6 +66,10 @@ export default async () => {
     inited: false,
     isSkipTrayQuit: false,
     event_app: { on: () => {}, emit: () => {} },
+    event_list: { on: () => {}, emit: () => {} },
+    event_dislike: { on: () => {}, emit: () => {} },
+    worker: { dbService: {} } as any,
+    player_status: { status: 'stoped' } as any,
     appSetting: defaultSetting,
     hotKey: {
       enable: true,
