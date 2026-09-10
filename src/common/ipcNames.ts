@@ -71,6 +71,9 @@ export const HOTKEY_RENDERER_EVENT_NAME = {
   get_hot_key: 'get_hot_key',
   key_down: 'key_down',
   set_hot_key_config: 'set_hot_key_config',
+  set_config: 'set_config',
+  status: 'status',
+  enable: 'enable',
 }
 
 export const WIN_MAIN_RENDERER_CHANNEL_NAME = WIN_MAIN_RENDERER_EVENT_NAME

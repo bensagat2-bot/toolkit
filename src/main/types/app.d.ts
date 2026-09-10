@@ -21,4 +21,8 @@ declare global {
   var lxOldDataPath: string
   var lx: Lx
   var appWorder: AppWorder
+
+  interface Global {
+    [key: string]: any
+  }
 }
