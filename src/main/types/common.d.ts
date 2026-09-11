@@ -1,5 +1,0 @@
-import '@common/types/utils'
-import '@common/types/app_setting'
-import '@common/types/common'
-import '@common/types/theme'
-import '@common/types/ipc_main'
