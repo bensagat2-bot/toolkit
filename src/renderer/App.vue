@@ -1,19 +1,30 @@
 <template>
-  <div id="app">
+  <div id="container">
     <aside id="sidebar">
       <div class="logo">
         <img src="./assets/images/vxper.png" alt="V1Per" class="logo-img" />
       </div>
-      <nav class="menu">
-        <router-link v-for="item in menus" :key="item.to" :to="item.to" class="nav-item" active-class="active">
-          <svg viewBox="0 0 24 24" fill="currentColor" v-html="item.icon"></svg>
-          <span class="nav-label">{{ item.name }}</span>
-        </router-link>
+      <nav ref="dom_menu" class="menu">
+        <ul class="list" role="toolbar">
+          <li v-for="item in menus" :key="item.to" class="nav-item" role="presentation">
+            <router-link
+              :to="item.to"
+              class="link"
+              exact-active-class="active"
+              :aria-label="item.name"
+              :title="item.name"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" v-html="item.icon"></svg>
+            </router-link>
+          </li>
+        </ul>
       </nav>
     </aside>
-    <main id="main">
-      <router-view />
-    </main>
+    <div id="main">
+      <div class="main-content">
+        <router-view />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -28,84 +39,169 @@ const menus = [
 </script>
 
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html, body, #root { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+:root {
+  --color-font: #333;
+  --color-nav-font: #888;
+  --color-content-background: #f5f5f5;
+  --color-app-background: #e8e8e8;
+  --color-main-background: #fff;
+  --color-primary: #4caf50;
+  --color-primary-light-300: #81c784;
+  --color-primary-light-400: #66bb6a;
+  --color-primary-light-500: #4caf50;
+  --color-primary-dark-200: #388e3c;
+  --color-primary-alpha-700: rgba(76, 175, 80, 0.7);
+  --color-primary-alpha-900: rgba(76, 175, 80, 0.9);
+}
 
-#app {
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body, #root { height: 100%; }
+
+body {
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  color: var(--color-font);
+  background-color: var(--color-content-background);
+  transition: background-color 0.4s ease;
+}
+
+#container {
+  position: relative;
   display: flex;
   height: 100%;
-  background: #1a1a2e;
-  color: #e0e0e0;
+  background-color: var(--color-app-background);
 }
 
 #sidebar {
-  width: 64px;
-  background: #16213e;
+  flex: none;
+  width: 6.6%;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 12px 0;
-  gap: 4px;
-  border-right: 1px solid #0f3460;
+  background-color: var(--color-app-background);
+  transition: background-color 0.4s ease;
+  -webkit-app-region: drag;
+  -webkit-user-select: none;
 }
 
 .logo {
-  width: 40px;
-  height: 40px;
-  margin-bottom: 12px;
+  box-sizing: border-box;
+  padding: 8px 13%;
+  height: 50px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .logo-img {
   width: 100%;
-  height: 100%;
+  height: auto;
+  max-height: 34px;
   object-fit: contain;
-  border-radius: 8px;
 }
 
 .menu {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex: 1;
+  flex: auto;
+}
+
+.list {
+  width: 100%;
+  -webkit-user-select: none;
+  -webkit-app-region: no-drag;
+  list-style: none;
+  padding: 0;
+  margin: 0;
 }
 
 .nav-item {
-  width: 48px;
-  height: 48px;
+  position: relative;
+  width: 100%;
+}
+
+.nav-item::before {
+  content: '';
+  display: block;
+  width: 100%;
+  padding-bottom: 84%;
+}
+
+.link {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  color: var(--color-nav-font);
   text-decoration: none;
-  color: #8892b0;
-  transition: all 0.2s;
-  font-size: 9px;
-  gap: 2px;
+  text-align: center;
+  outline: none;
+  cursor: pointer;
+  transition: background-color 0.3s ease, opacity 0.3s ease;
 }
 
-.nav-item:hover {
-  background: #1a1a2e;
-  color: #ccd6f6;
+.link svg {
+  width: 32%;
+  height: 32%;
+  flex: none;
 }
 
-.nav-item.active {
-  background: #e94560;
-  color: white;
+.link::before {
+  content: '';
+  display: block;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  background-color: var(--color-primary-dark-200);
+  border-radius: 4px;
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
 }
 
-.nav-item svg {
-  width: 20px;
-  height: 20px;
+.link:hover:not(.active) {
+  background-color: var(--color-primary-light-400);
+  opacity: 0.8;
 }
 
-.nav-label {
-  line-height: 1;
+.link:active:not(.active) {
+  opacity: 0.6;
+  background-color: var(--color-primary-light-300);
+}
+
+.link.active {
+  background-color: var(--color-primary-light-300);
+  color: var(--color-font);
+}
+
+.link.active::before {
+  transform: translateX(0);
+}
+
+.link.active:hover {
+  background-color: var(--color-primary-light-400);
 }
 
 #main {
-  flex: 1;
-  overflow: auto;
-  background: #1a1a2e;
+  flex: auto;
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  background-color: var(--color-main-background);
+  border-top-left-radius: 4px;
+  border-bottom-left-radius: 4px;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.1);
+}
+
+.main-content {
+  position: relative;
+  flex: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 </style>
