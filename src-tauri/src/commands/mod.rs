@@ -1,41 +1,36 @@
-pub mod device;
-pub mod unisoc;
-
-use serde::{Deserialize, Serialize};
 use tauri::command;
 
-// ── Re-export device commands ────────────────────────────────
+// ── Device Commands ──────────────────────────────────────────
 
 #[command]
-pub async fn detect_device() -> Result<super::services::device::DetectResult, String> {
-    let (mode, serial) = super::services::adb::detect().await;
-    Ok(super::services::device::DetectResult { mode, serial })
+pub async fn detect_device() -> Result<crate::services::device::DetectResult, String> {
+    Ok(crate::services::device::detect().await)
 }
 
 #[command]
 pub async fn check_adb() -> Result<bool, String> {
-    Ok(super::services::device::check_adb().await)
+    Ok(crate::services::device::check_adb().await)
 }
 
 #[command]
 pub async fn check_fastboot() -> Result<bool, String> {
-    Ok(super::services::device::check_fastboot().await)
+    Ok(crate::services::device::check_fastboot().await)
 }
 
 #[command]
 pub async fn run_adb_command(args: Vec<String>) -> Result<String, String> {
     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    Ok(super::services::adb::run_adb(&arg_refs).await)
+    Ok(crate::services::adb::run_adb(&arg_refs).await)
 }
 
 #[command]
 pub async fn run_fastboot_command(args: Vec<String>) -> Result<String, String> {
-    Ok(super::services::fastboot::run_command(args).await)
+    Ok(crate::services::fastboot::run_command(args).await)
 }
 
 #[command]
 pub async fn get_device_info() -> Result<String, String> {
-    Ok(super::services::device::get_info().await)
+    Ok(crate::services::device::get_info().await)
 }
 
 #[command]
@@ -48,50 +43,50 @@ pub async fn open_path(path: String) -> Result<(), String> {
     open::that(&path).map_err(|e| e.to_string())
 }
 
-// ── Re-export unisoc commands ────────────────────────────────
+// ── Unisoc Commands ──────────────────────────────────────────
 
 #[command]
-pub async fn get_packages() -> Result<std::collections::HashMap<String, bool>, String> {
-    super::services::unisoc::get_packages().await
+pub fn get_packages() -> Result<std::collections::HashMap<String, bool>, String> {
+    Ok(crate::services::unisoc::get_packages_installed())
 }
 
 #[command]
-pub async fn stop_process() -> Result<bool, String> {
-    super::services::unisoc::stop_process().await
+pub fn stop_process() -> Result<bool, String> {
+    Ok(crate::services::unisoc::stop_process())
 }
 
 #[command]
-pub async fn unlock_bootloader(pkg_id: String, device: Option<String>) -> Result<bool, String> {
-    super::services::unisoc::unlock_bootloader(&pkg_id, device.as_deref()).await
+pub fn unlock_bootloader(pkg_id: String, device: Option<String>) -> Result<bool, String> {
+    crate::services::unisoc::unlock(&pkg_id, device.as_deref())
 }
 
 #[command]
-pub async fn dump_partitions(pkg_id: String, device: Option<String>) -> Result<bool, String> {
-    super::services::unisoc::dump_partitions(&pkg_id, device.as_deref()).await
+pub fn dump_partitions(pkg_id: String, device: Option<String>) -> Result<bool, String> {
+    crate::services::unisoc::dump(&pkg_id, device.as_deref())
 }
 
 #[command]
-pub async fn flash_partition(pkg_id: String, device: Option<String>, partition: String, image: String) -> Result<bool, String> {
-    super::services::unisoc::flash_partition(&pkg_id, device.as_deref(), &partition, &image).await
+pub fn flash_partition(pkg_id: String, device: Option<String>, partition: String, image: String) -> Result<bool, String> {
+    crate::services::unisoc::flash(&pkg_id, device.as_deref(), &partition, &image)
 }
 
 #[command]
-pub async fn erase_partition(pkg_id: String, device: Option<String>, partition: String) -> Result<bool, String> {
-    super::services::unisoc::erase_partition(&pkg_id, device.as_deref(), &partition).await
+pub fn erase_partition(pkg_id: String, device: Option<String>, partition: String) -> Result<bool, String> {
+    crate::services::unisoc::erase(&pkg_id, device.as_deref(), &partition)
 }
 
 #[command]
-pub async fn list_partitions(pkg_id: String, device: Option<String>) -> Result<String, String> {
-    super::services::unisoc::list_partitions(&pkg_id, device.as_deref()).await
+pub fn list_partitions(pkg_id: String, device: Option<String>) -> Result<String, String> {
+    crate::services::unisoc::list_parts(&pkg_id, device.as_deref())
 }
 
 #[command]
-pub async fn erase_frp(pkg_id: String, device: Option<String>) -> Result<bool, String> {
-    super::services::unisoc::erase_frp(&pkg_id, device.as_deref()).await
+pub fn erase_frp(pkg_id: String, device: Option<String>) -> Result<bool, String> {
+    crate::services::unisoc::erase_frp(&pkg_id, device.as_deref())
 }
 
 #[command]
-pub async fn select_file(title: String, filters: Vec<String>) -> Result<Option<String>, String> {
+pub fn select_file(title: String, filters: Vec<String>) -> Result<Option<String>, String> {
     let result = rfd::FileDialog::new()
         .set_title(&title)
         .add_filter("Files", &filters)
@@ -100,7 +95,7 @@ pub async fn select_file(title: String, filters: Vec<String>) -> Result<Option<S
 }
 
 #[command]
-pub async fn confirm_action(message: String) -> Result<bool, String> {
+pub fn confirm_action(message: String) -> Result<bool, String> {
     let result = rfd::MessageDialog::new()
         .set_title("Confirm Action")
         .set_description(&message)

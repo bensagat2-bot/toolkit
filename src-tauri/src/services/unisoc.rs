@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,14 +14,13 @@ pub fn set_resource_dir(path: PathBuf) {
 fn get_resource_dir() -> PathBuf {
     unsafe {
         RESOURCE_DIR.clone().unwrap_or_else(|| {
-            // Fallback: walk up from exe
             let exe = std::env::current_exe().unwrap_or_default();
             exe.parent().unwrap_or(&std::path::PathBuf::from(".")).to_path_buf()
         })
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct UnisocPackage {
     pub id: String,
     pub name: String,
@@ -41,7 +39,7 @@ pub struct UnisocPackage {
     pub files: Vec<String>,
 }
 
-fn get_packages() -> HashMap<String, UnisocPackage> {
+fn build_packages() -> HashMap<String, UnisocPackage> {
     let mut m = HashMap::new();
     m.insert("ums9230".into(), UnisocPackage {
         id: "ums9230".into(), name: "UMS9230 (T606/T612)".into(),
@@ -88,13 +86,10 @@ fn get_packages() -> HashMap<String, UnisocPackage> {
 
 fn find_unisoc_root() -> Option<PathBuf> {
     let resource_dir = get_resource_dir();
-    // Check resource_dir/Unisoc (Tauri bundled resources)
     let candidate = resource_dir.join("Unisoc");
     if candidate.exists() { return Some(candidate); }
-    // Check resource_dir/resources/Unisoc
     let candidate = resource_dir.join("resources").join("Unisoc");
     if candidate.exists() { return Some(candidate); }
-    // Fallback: walk up from exe
     let exe = std::env::current_exe().ok()?;
     let mut dir = exe.parent()?;
     for _ in 0..6 {
@@ -111,7 +106,7 @@ fn resolve_spd_dump(pkg_dir: &Path) -> Option<PathBuf> {
         if shared.exists() { return Some(shared); }
     }
     let local = pkg_dir.join("spd_dump.exe");
-    if local.exists() { return Some(local) } else { None }
+    if local.exists() { Some(local) } else { None }
 }
 
 fn prepare_work(pkg_dir: &Path, device_dir: Option<&Path>, pkg: &UnisocPackage) -> PathBuf {
@@ -150,195 +145,179 @@ fn run_spd_dump(exe: &Path, tokens: &[String], cwd: &Path) -> Result<String, Str
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-fn run_helper(pkg_dir: &Path, tools_gen: &str, exe: &str, arg: &str, cwd: &Path) -> Result<String, String> {
-    let exe_name = if exe.ends_with(".exe") { exe.to_string() } else { format!("{}.exe", exe) };
+fn run_helper(pkg_dir: &Path, tools_gen: &str, exe_name: &str, arg: &str, cwd: &Path) -> Result<String, String> {
+    let name = if exe_name.ends_with(".exe") { exe_name.to_string() } else { format!("{}.exe", exe_name) };
     let mut exe_path = None;
     if let Some(root) = find_unisoc_root() {
-        let shared = root.join("tools").join(tools_gen).join(&exe_name);
+        let shared = root.join("tools").join(tools_gen).join(&name);
         if shared.exists() { exe_path = Some(shared); }
     }
     if exe_path.is_none() {
-        let local = pkg_dir.join(&exe_name);
+        let local = pkg_dir.join(&name);
         if local.exists() { exe_path = Some(local); }
     }
-    let path = exe_path.ok_or_else(|| format!("{} not found", exe_name))?;
+    let path = exe_path.ok_or_else(|| format!("{} not found", name))?;
     let output = Command::new(path)
         .arg(arg)
         .current_dir(cwd)
         .output()
-        .map_err(|e| format!("Failed to run {}: {}", exe_name, e))?;
+        .map_err(|e| format!("Failed to run {}: {}", name, e))?;
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-pub async fn get_packages() -> Result<HashMap<String, bool>, String> {
-    let pkgs = get_packages();
+// ── Public API ──────────────────────────────────────────────
+
+pub fn get_packages_installed() -> HashMap<String, bool> {
     let root = find_unisoc_root();
+    let pkgs = build_packages();
     let mut result = HashMap::new();
-    for (id, _) in &pkgs {
+    for id in pkgs.keys() {
         let installed = root.as_ref().map(|r| r.join(id).exists()).unwrap_or(false);
         result.insert(id.clone(), installed);
     }
-    Ok(result)
+    result
 }
 
-pub async fn stop_process() -> Result<bool, String> {
-    let mut proc = CURRENT_PROCESS.lock().map_err(|e| e.to_string())?;
-    if let Some(pid) = proc.take() {
-        unsafe { libc::terminate_process(pid as _, 1); }
-        return Ok(true);
+pub fn stop_process() -> bool {
+    let mut proc = CURRENT_PROCESS.lock().unwrap();
+    if let Some(_pid) = proc.take() {
+        #[cfg(windows)]
+        unsafe { winapi::um::processthreadsapi::TerminateProcess(-1isize as _, 1); }
+        return true;
     }
-    Ok(false)
+    false
 }
 
-pub async fn unlock_bootloader(pkg_id: &str, device: Option<&str>) -> Result<bool, String> {
-    let pkgs = get_packages();
+pub fn unlock(pkg_id: &str, device: Option<&str>) -> Result<bool, String> {
+    let pkgs = build_packages();
     let pkg = pkgs.get(pkg_id).ok_or("Unknown package")?;
     let root = find_unisoc_root().ok_or("Unisoc folder not found")?;
     let pkg_dir = root.join(pkg_id);
     if !pkg_dir.exists() { return Err("Package not installed".into()); }
-    let device_dir = device.map(|d| pkg_dir.join(d)).filter(|d| d.exists());
-    let work = prepare_work(&pkg_dir, device_dir.as_ref(), pkg);
+    let device_dir = device.map(|d| pkg_dir.join(d)).filter(|d| d.exists()).map(|p| p.as_path().to_path_buf());
+    let work = prepare_work(&pkg_dir, device_dir.as_deref(), pkg);
     let spd_dump = resolve_spd_dump(&pkg_dir).ok_or("spd_dump.exe not found")?;
 
-    // Step 1: Backup and erase
     let mut tokens = build_base_tokens(true, pkg);
-    tokens.extend(["r", "splloader", "r", "uboot", "e", "splloader", "e", "splloader_bak", "reset"]);
+    tokens.extend(["r", "splloader", "r", "uboot", "e", "splloader", "e", "splloader_bak", "reset"].iter().map(|s| s.to_string()));
     run_spd_dump(&spd_dump, &tokens, &work)?;
 
-    // Generate spl-unlock
     let unlocker = work.join("spl-unlock.bin");
     if !unlocker.exists() {
         let spl_source = pkg.spl_loader_bk.as_deref().unwrap_or("splloader.bin");
         run_helper(&pkg_dir, &pkg.tools_gen, "gen_spl-unlock", spl_source, &work)?;
     }
 
-    // Rename files
     let spl16k = work.join("u-boot-spl-16k-sign.bin");
     let spl_bin = work.join("splloader.bin");
     if spl_bin.exists() { fs::rename(&spl_bin, &spl16k).ok(); }
-    if pkg.chsize_uboot {
-        run_helper(&pkg_dir, &pkg.tools_gen, "chsize", "uboot.bin", &work).ok();
-    }
+    if pkg.chsize_uboot { run_helper(&pkg_dir, &pkg.tools_gen, "chsize", "uboot.bin", &work).ok(); }
     let ub_bin = work.join("uboot.bin");
     let ub_bak = work.join("uboot_bak.bin");
     if ub_bin.exists() { fs::rename(&ub_bin, &ub_bak).ok(); }
 
-    // Step 2: Flash modified uboot
     tokens = build_base_tokens(true, pkg);
-    tokens.extend(["w", "uboot", &pkg.cboot, "reset"]);
+    tokens.extend(["w", "uboot", &pkg.cboot, "reset"].iter().map(|s| s.to_string()));
     run_spd_dump(&spd_dump, &tokens, &work)?;
     std::thread::sleep(std::time::Duration::from_secs(10));
 
-    // Send unlocker
-    tokens = vec![
-        "exec_addr".into(), format!("0x{:x}", pkg.exec_addr),
-        "fdl".into(), "spl-unlock.bin".into(), format!("0x{:x}", pkg.fdl1_addr),
-    ];
+    tokens = vec!["exec_addr".into(), format!("0x{:x}", pkg.exec_addr), "fdl".into(), "spl-unlock.bin".into(), format!("0x{:x}", pkg.fdl1_addr)];
     run_spd_dump(&spd_dump, &tokens, &work)?;
 
-    // Check status
     tokens = build_base_tokens(false, pkg);
-    tokens.extend(["verbose", "2", "read_part", "miscdata", "8192", "64", "m.bin", "reset"]);
+    tokens.extend(["verbose", "2", "read_part", "miscdata", "8192", "64", "m.bin", "reset"].iter().map(|s| s.to_string()));
     run_spd_dump(&spd_dump, &tokens, &work)?;
 
-    // Backup partitions
     tokens = build_base_tokens(false, pkg);
     for part in &pkg.backup_partitions { tokens.push("r".into()); tokens.push(part.clone()); }
     tokens.push("reset".into());
     run_spd_dump(&spd_dump, &tokens, &work)?;
 
-    // Step 3: Restore
-    let spl_restore = if spl16k.exists() { "u-boot-spl-16k-sign.bin" }
-        else { pkg.spl_loader_bk.as_deref().unwrap_or("splloader_bk.bin") };
+    let spl_restore = if spl16k.exists() { "u-boot-spl-16k-sign.bin" } else { pkg.spl_loader_bk.as_deref().unwrap_or("splloader_bk.bin") };
     let ub_restore = if ub_bak.exists() { "uboot_bak.bin" } else { "uboot_bk.bin" };
     tokens = build_base_tokens(false, pkg);
-    tokens.extend(["w", "splloader", spl_restore, "w", "uboot", ub_restore]);
-    if pkg.erase_persist { tokens.extend(["e", "persist"]); }
-    tokens.extend(["w", "misc", &pkg.misc_done, "reset"]);
+    tokens.extend(["w", "splloader", spl_restore, "w", "uboot", ub_restore].iter().map(|s| s.to_string()));
+    if pkg.erase_persist { tokens.extend(["e", "persist"].iter().map(|s| s.to_string())); }
+    tokens.extend(["w", "misc", &pkg.misc_done, "reset"].iter().map(|s| s.to_string()));
     run_spd_dump(&spd_dump, &tokens, &work)?;
-
     Ok(true)
 }
 
-pub async fn dump_partitions(pkg_id: &str, device: Option<&str>) -> Result<bool, String> {
-    let pkgs = get_packages();
+pub fn dump(pkg_id: &str, device: Option<&str>) -> Result<bool, String> {
+    let pkgs = build_packages();
     let pkg = pkgs.get(pkg_id).ok_or("Unknown package")?;
     let root = find_unisoc_root().ok_or("Unisoc folder not found")?;
     let pkg_dir = root.join(pkg_id);
     if !pkg_dir.exists() { return Err("Package not installed".into()); }
-    let device_dir = device.map(|d| pkg_dir.join(d)).filter(|d| d.exists());
-    let work = prepare_work(&pkg_dir, device_dir.as_ref(), pkg);
+    let device_dir = device.map(|d| pkg_dir.join(d)).filter(|d| d.exists()).map(|p| p.as_path().to_path_buf());
+    let work = prepare_work(&pkg_dir, device_dir.as_deref(), pkg);
     let spd_dump = resolve_spd_dump(&pkg_dir).ok_or("spd_dump.exe not found")?;
     let dump_dir = dirs::download_dir().unwrap_or_else(|| std::env::temp_dir()).join("v1per_unisoc_dump");
     fs::create_dir_all(&dump_dir).ok();
     let mut tokens = build_base_tokens(true, pkg);
-    tokens.extend(["path", &dump_dir.to_string_lossy(), "r", "all", "reset"]);
+    tokens.extend(["path", &dump_dir.to_string_lossy().to_string(), "r", "all", "reset"].iter().map(|s| s.to_string()));
     run_spd_dump(&spd_dump, &tokens, &work)?;
     Ok(true)
 }
 
-pub async fn flash_partition(pkg_id: &str, device: Option<&str>, partition: &str, image: &str) -> Result<bool, String> {
+pub fn flash(pkg_id: &str, device: Option<&str>, partition: &str, image: &str) -> Result<bool, String> {
     if !Path::new(image).exists() { return Err("Image not found".into()); }
-    let pkgs = get_packages();
+    let pkgs = build_packages();
     let pkg = pkgs.get(pkg_id).ok_or("Unknown package")?;
     let root = find_unisoc_root().ok_or("Unisoc folder not found")?;
     let pkg_dir = root.join(pkg_id);
     if !pkg_dir.exists() { return Err("Package not installed".into()); }
-    let device_dir = device.map(|d| pkg_dir.join(d)).filter(|d| d.exists());
-    let work = prepare_work(&pkg_dir, device_dir.as_ref(), pkg);
+    let device_dir = device.map(|d| pkg_dir.join(d)).filter(|d| d.exists()).map(|p| p.as_path().to_path_buf());
+    let work = prepare_work(&pkg_dir, device_dir.as_deref(), pkg);
     let spd_dump = resolve_spd_dump(&pkg_dir).ok_or("spd_dump.exe not found")?;
     let mut tokens = build_base_tokens(true, pkg);
-    tokens.extend(["w", partition, image, "reset"]);
+    tokens.extend(["w", partition, image, "reset"].iter().map(|s| s.to_string()));
     run_spd_dump(&spd_dump, &tokens, &work)?;
     Ok(true)
 }
 
-pub async fn erase_partition(pkg_id: &str, device: Option<&str>, partition: &str) -> Result<bool, String> {
-    let pkgs = get_packages();
+pub fn erase(pkg_id: &str, device: Option<&str>, partition: &str) -> Result<bool, String> {
+    let pkgs = build_packages();
     let pkg = pkgs.get(pkg_id).ok_or("Unknown package")?;
     let root = find_unisoc_root().ok_or("Unisoc folder not found")?;
     let pkg_dir = root.join(pkg_id);
     if !pkg_dir.exists() { return Err("Package not installed".into()); }
-    let device_dir = device.map(|d| pkg_dir.join(d)).filter(|d| d.exists());
-    let work = prepare_work(&pkg_dir, device_dir.as_ref(), pkg);
+    let device_dir = device.map(|d| pkg_dir.join(d)).filter(|d| d.exists()).map(|p| p.as_path().to_path_buf());
+    let work = prepare_work(&pkg_dir, device_dir.as_deref(), pkg);
     let spd_dump = resolve_spd_dump(&pkg_dir).ok_or("spd_dump.exe not found")?;
     let mut tokens = build_base_tokens(true, pkg);
-    tokens.extend(["e", partition, "reset"]);
+    tokens.extend(["e", partition, "reset"].iter().map(|s| s.to_string()));
     run_spd_dump(&spd_dump, &tokens, &work)?;
     Ok(true)
 }
 
-pub async fn list_partitions(pkg_id: &str, device: Option<&str>) -> Result<String, String> {
-    let pkgs = get_packages();
+pub fn list_parts(pkg_id: &str, device: Option<&str>) -> Result<String, String> {
+    let pkgs = build_packages();
     let pkg = pkgs.get(pkg_id).ok_or("Unknown package")?;
     let root = find_unisoc_root().ok_or("Unisoc folder not found")?;
     let pkg_dir = root.join(pkg_id);
     if !pkg_dir.exists() { return Err("Package not installed".into()); }
-    let device_dir = device.map(|d| pkg_dir.join(d)).filter(|d| d.exists());
-    let work = prepare_work(&pkg_dir, device_dir.as_ref(), pkg);
+    let device_dir = device.map(|d| pkg_dir.join(d)).filter(|d| d.exists()).map(|p| p.as_path().to_path_buf());
+    let work = prepare_work(&pkg_dir, device_dir.as_deref(), pkg);
     let spd_dump = resolve_spd_dump(&pkg_dir).ok_or("spd_dump.exe not found")?;
     let list_file = work.join("partition_list.txt");
     let mut tokens = build_base_tokens(true, pkg);
-    tokens.extend(["path", &work.to_string_lossy(), "partition_list", &list_file.to_string_lossy(), "p", "reset"]);
+    tokens.extend(["path", &work.to_string_lossy().to_string(), "partition_list", &list_file.to_string_lossy().to_string(), "p", "reset"].iter().map(|s| s.to_string()));
     run_spd_dump(&spd_dump, &tokens, &work)?;
-    if list_file.exists() {
-        fs::read_to_string(&list_file).map_err(|e| e.to_string())
-    } else {
-        Ok("No partition list produced".into())
-    }
+    if list_file.exists() { fs::read_to_string(&list_file).map_err(|e| e.to_string()) } else { Ok("No partition list produced".into()) }
 }
 
-pub async fn erase_frp(pkg_id: &str, device: Option<&str>) -> Result<bool, String> {
-    let pkgs = get_packages();
+pub fn erase_frp(pkg_id: &str, device: Option<&str>) -> Result<bool, String> {
+    let pkgs = build_packages();
     let pkg = pkgs.get(pkg_id).ok_or("Unknown package")?;
     let root = find_unisoc_root().ok_or("Unisoc folder not found")?;
     let pkg_dir = root.join(pkg_id);
     if !pkg_dir.exists() { return Err("Package not installed".into()); }
-    let device_dir = device.map(|d| pkg_dir.join(d)).filter(|d| d.exists());
-    let work = prepare_work(&pkg_dir, device_dir.as_ref(), pkg);
+    let device_dir = device.map(|d| pkg_dir.join(d)).filter(|d| d.exists()).map(|p| p.as_path().to_path_buf());
+    let work = prepare_work(&pkg_dir, device_dir.as_deref(), pkg);
     let spd_dump = resolve_spd_dump(&pkg_dir).ok_or("spd_dump.exe not found")?;
     let mut tokens = build_base_tokens(true, pkg);
-    tokens.extend(["e", "frp", "reset"]);
+    tokens.extend(["e", "frp", "reset"].iter().map(|s| s.to_string()));
     run_spd_dump(&spd_dump, &tokens, &work)?;
     Ok(true)
 }
