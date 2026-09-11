@@ -203,7 +203,7 @@ function showInfo(driver) {
 }
 </script>
 
-<style lang="less" scoped>
+<style scoped>
 .drivers-page {
   padding: 20px;
   height: 100%;

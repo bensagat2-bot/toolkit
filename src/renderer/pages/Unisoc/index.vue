@@ -110,7 +110,7 @@ onMounted(async () => {
 })
 </script>
 
-<style lang="less" scoped>
+<style scoped>
 .unisoc-page { height: 100%; display: flex; flex-direction: column; padding: 16px; gap: 16px; }
 .unisoc-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--color-primary-light-500); h2 { font-size: 16px; margin: 0; } }
 .header-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
