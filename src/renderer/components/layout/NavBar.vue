@@ -40,20 +40,6 @@ const menus: Array<{
   polylines: string[]
 }> = [
   {
-    to: '/drivers',
-    name: 'Drivers',
-    label: 'Drivers',
-    paths: ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'],
-    lines: [
-      { x1: '7', y1: '10', x2: '12', y2: '15' },
-      { x1: '12', y1: '15', x2: '17', y2: '10' },
-      { x1: '12', y1: '15', x2: '12', y2: '3' },
-    ],
-    rects: [],
-    circles: [],
-    polylines: [],
-  },
-  {
     to: '/mediatek',
     name: 'MediaTek',
     label: 'MediaTek Tools',
@@ -103,6 +89,20 @@ const menus: Array<{
     label: 'Utilities',
     paths: ['M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z'],
     lines: [],
+    rects: [],
+    circles: [],
+    polylines: [],
+  },
+  {
+    to: '/drivers',
+    name: 'Drivers',
+    label: 'Drivers',
+    paths: ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'],
+    lines: [
+      { x1: '7', y1: '10', x2: '12', y2: '15' },
+      { x1: '12', y1: '15', x2: '17', y2: '10' },
+      { x1: '12', y1: '15', x2: '12', y2: '3' },
+    ],
     rects: [],
     circles: [],
     polylines: [],

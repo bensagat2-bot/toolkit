@@ -8,7 +8,7 @@
       <div class="status">{{ statusText }}</div>
     </div>
     <div class="btnContent">
-      <div class="btn" aria-label="Drivers" title="Drivers" @click="goTo('/drivers')">
+      <div class="btn" aria-label="MediaTek Tools" title="MediaTek Tools" @click="goTo('/mediatek')">
         <svg
           viewBox="0 0 24 24"
           fill="none"

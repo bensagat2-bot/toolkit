@@ -137,11 +137,14 @@ fn build_base_tokens(wait: bool, pkg: &UnisocPackage) -> Vec<String> {
 }
 
 fn run_spd_dump(exe: &Path, tokens: &[String], cwd: &Path) -> Result<String, String> {
-    let output = Command::new(exe)
-        .args(tokens)
-        .current_dir(cwd)
-        .output()
-        .map_err(|e| format!("Failed to run spd_dump: {}", e))?;
+    let mut cmd = Command::new(exe);
+    cmd.args(tokens).current_dir(cwd);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+    let output = cmd.output().map_err(|e| format!("Failed to run spd_dump: {}", e))?;
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
@@ -157,11 +160,14 @@ fn run_helper(pkg_dir: &Path, tools_gen: &str, exe_name: &str, arg: &str, cwd: &
         if local.exists() { exe_path = Some(local); }
     }
     let path = exe_path.ok_or_else(|| format!("{} not found", name))?;
-    let output = Command::new(path)
-        .arg(arg)
-        .current_dir(cwd)
-        .output()
-        .map_err(|e| format!("Failed to run {}: {}", name, e))?;
+    let mut cmd = Command::new(path);
+    cmd.arg(arg).current_dir(cwd);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+    let output = cmd.output().map_err(|e| format!("Failed to run {}: {}", name, e))?;
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 

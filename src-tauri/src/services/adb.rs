@@ -1,7 +1,17 @@
 use std::process::Command;
 
+fn base_command(program: &str) -> Command {
+    let mut cmd = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+    cmd
+}
+
 pub async fn run_adb(args: &[&str]) -> String {
-    let output = Command::new("adb")
+    let output = base_command("adb")
         .args(args)
         .output()
         .unwrap_or_else(|_| std::process::Output {
@@ -33,7 +43,7 @@ pub async fn detect() -> (String, Option<String>) {
 }
 
 pub async fn run_fastboot(args: &[&str]) -> String {
-    let output = Command::new("fastboot")
+    let output = base_command("fastboot")
         .args(args)
         .output()
         .unwrap_or_else(|_| std::process::Output {

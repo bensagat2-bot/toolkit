@@ -4,13 +4,9 @@ import DriversView from '@/views/DriversView.vue'
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: '/', redirect: '/drivers' },
+    { path: '/', redirect: '/mediatek' },
+    { path: '/mediatek', name: 'MediaTek', component: () => import('@/pages/Mediatek/index.vue') },
     { path: '/drivers', name: 'Drivers', component: DriversView },
-    {
-      path: '/mediatek',
-      name: 'MediaTek',
-      component: () => import('@/pages/Mediatek/index.vue'),
-    },
     {
       path: '/unisoc',
       name: 'Unisoc',
@@ -26,7 +22,7 @@ const router = createRouter({
       name: 'Settings',
       component: () => import('@/pages/Settings/index.vue'),
     },
-    { path: '/:pathMatch(.*)*', redirect: '/drivers' },
+    { path: '/:pathMatch(.*)*', redirect: '/mediatek' },
   ],
 })
 
