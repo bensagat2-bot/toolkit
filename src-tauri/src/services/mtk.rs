@@ -483,7 +483,6 @@ pub fn flash(app: AppHandle, opts: FlashOptions) -> Result<serde_json::Value, St
             .map(|f| f.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        emit(&app, "log", format!("Writing [{}] -> [{}]... ", part.part.name, file_name));
         let mut reader = BufReader::new(file);
         device
             .write_partition(&part.part.name, size, &mut reader, noop_progress)

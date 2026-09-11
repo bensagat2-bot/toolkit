@@ -32,9 +32,23 @@ const busy = ref(false)
 const elapsed = ref(0)
 const terminalRef = ref(null)
 let elapsedTimer = null
+let logQueue = []
+let logTimer = null
 
 function addLog(text, type = 'info') {
   logLines.value.push({ text, type })
+}
+
+function queueLog(text, type = 'info') {
+  logQueue.push({ text, type })
+  if (!logTimer) flushNext()
+}
+
+function flushNext() {
+  if (!logQueue.length) { logTimer = null; return }
+  const item = logQueue.shift()
+  addLog(item.text, item.type)
+  logTimer = setTimeout(flushNext, 500)
 }
 
 watch(() => logLines.value.length, () => {
@@ -58,9 +72,9 @@ async function runFlash() {
   elapsedTimer = setInterval(() => { elapsed.value += 1 }, 1000)
   try {
     await sendIpcToMain('mtk_flash', { opts: pending.value })
-    addLog('Flash complete.', 'success')
+    queueLog('Flash complete.', 'success')
   } catch (e) {
-    addLog(`Flash failed: ${e}`, 'error')
+    queueLog(`Flash failed: ${e}`, 'error')
   } finally {
     clearInterval(elapsedTimer)
     elapsedTimer = null
@@ -70,7 +84,7 @@ async function runFlash() {
 
 const onProgress = (_event, data) => {
   if (!data || !data.message) return
-  addLog(data.message, String(data.message).endsWith('OK') ? 'success' : 'info')
+  queueLog(data.message, String(data.message).endsWith('OK') ? 'success' : 'info')
 }
 
 onMounted(() => {
@@ -80,6 +94,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (elapsedTimer) clearInterval(elapsedTimer)
+  if (logTimer) clearTimeout(logTimer)
 })
 </script>
 
@@ -87,7 +102,7 @@ onBeforeUnmount(() => {
 .flash-page { height: 100%; display: flex; flex-direction: column; padding: 16px; gap: 16px; animation: pageIn 0.35s ease; }
 .flash-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--color-primary-light-500); font-size: 12px; color: var(--text-secondary); span.elapsed { color: var(--accent-primary); font-weight: 600; } }
 .flash-log-card { flex: 1; display: flex; flex-direction: column; border: 1px solid var(--border-primary); border-radius: 6px; overflow: hidden; min-height: 0; animation: cardIn 0.45s ease; }
-.terminal-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; background: var(--bg-tertiary); border-bottom: 1px solid var(--border-primary); span { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); } }
+.terminal-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border-bottom: var(--color-list-header-border-bottom); span { font-size: 12px; color: var(--color-font); } }
 .terminal-body { flex: 1; overflow-y: auto; padding: 8px 12px; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; line-height: 1.5; }
 .log-line { white-space: pre-wrap; word-break: break-all; &.info { color: var(--text-primary); } &.success { color: #4caf50; } &.warn { color: #ff9800; } &.error { color: #f44336; } }
 .log-empty { color: var(--text-secondary); font-style: italic; }
