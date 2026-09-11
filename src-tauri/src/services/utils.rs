@@ -53,11 +53,11 @@ fn fastboot(args: &[&str], timeout_ms: u64) -> String {
 }
 
 fn adb_serial(serial: &str, args: &[&str], timeout_ms: u64) -> String {
-    adb(&["-s", serial].into_iter().chain(args.iter()).collect::<Vec<_>>(), timeout_ms)
+    adb(&["-s", serial].into_iter().chain(args.iter().copied()).collect::<Vec<_>>(), timeout_ms)
 }
 
 fn fastboot_serial(serial: &str, args: &[&str], timeout_ms: u64) -> String {
-    fastboot(&["-s", serial].into_iter().chain(args.iter()).collect::<Vec<_>>(), timeout_ms)
+    fastboot(&["-s", serial].into_iter().chain(args.iter().copied()).collect::<Vec<_>>(), timeout_ms)
 }
 
 fn downloads_dir() -> PathBuf {
@@ -516,7 +516,7 @@ pub fn force_fastboot(app: AppHandle) -> Result<bool, String> {
         ack
     };
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
     let mut saw_device = false;
     let mut last_attempt: std::collections::HashMap<String, std::time::Instant> = std::collections::HashMap::new();
 
@@ -527,7 +527,10 @@ pub fn force_fastboot(app: AppHandle) -> Result<bool, String> {
             break;
         }
         if std::time::Instant::now() >= deadline {
-            emit(&app, "No MTK preloader device detected.");
+            if !saw_device {
+                emit(&app, "No MTK preloader device detected.");
+                return Err("Make sure the phone is powered off and connected via USB.".into());
+            }
             return Err("Device detected but no ACK received from preloader.".into());
         }
 
