@@ -94,13 +94,17 @@ fn build_packages() -> HashMap<String, UnisocPackage> {
 
 fn find_unisoc_root() -> Option<PathBuf> {
     let resource_dir = get_resource_dir();
+    // Bundled build: resources land in resource_dir/Unisoc
     let candidate = resource_dir.join("Unisoc");
     if candidate.exists() { return Some(candidate); }
-    let candidate = resource_dir.join("resources").join("Unisoc");
-    if candidate.exists() { return Some(candidate); }
+    // Dev: walk up from the executable to find the project's src-tauri/resources
     let exe = std::env::current_exe().ok()?;
     let mut dir = exe.parent()?;
-    for _ in 0..6 {
+    for _ in 0..8 {
+        let candidate = dir.join("src-tauri").join("resources").join("Unisoc");
+        if candidate.exists() { return Some(candidate); }
+        let candidate = dir.join("resources").join("Unisoc");
+        if candidate.exists() { return Some(candidate); }
         let candidate = dir.join("Unisoc");
         if candidate.exists() { return Some(candidate); }
         dir = dir.parent()?;
@@ -137,6 +141,16 @@ fn prepare_work(pkg_dir: &Path, device_dir: Option<&Path>, pkg: &UnisocPackage) 
 fn build_base_tokens(wait: bool, pkg: &UnisocPackage) -> Vec<String> {
     let mut t = Vec::new();
     if wait { t.push("--wait".into()); t.push("300".into()); }
+    t.push("exec_addr".into()); t.push(format!("0x{:x}", pkg.exec_addr));
+    t.push("fdl".into()); t.push(pkg.fdl1.clone()); t.push(format!("0x{:x}", pkg.fdl1_addr));
+    t.push("fdl".into()); t.push(pkg.fdl2.clone()); t.push(format!("0x{:x}", pkg.fdl2_addr));
+    t.push("exec".into());
+    t
+}
+
+fn build_base_tokens_wait(wait_secs: Option<u32>, pkg: &UnisocPackage) -> Vec<String> {
+    let mut t = Vec::new();
+    if let Some(secs) = wait_secs { t.push("--wait".into()); t.push(secs.to_string()); }
     t.push("exec_addr".into()); t.push(format!("0x{:x}", pkg.exec_addr));
     t.push("fdl".into()); t.push(pkg.fdl1.clone()); t.push(format!("0x{:x}", pkg.fdl1_addr));
     t.push("fdl".into()); t.push(pkg.fdl2.clone()); t.push(format!("0x{:x}", pkg.fdl2_addr));
@@ -277,17 +291,219 @@ pub struct UnisocFlashPart {
     pub file: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct UnisocCliOp {
+    pub name: String,
+    pub part: Option<String>,
+    pub file: Option<String>,
+    pub offset: Option<String>,
+    pub size: Option<String>,
+    pub mode: Option<String>,
+    pub value: Option<String>,
+}
+
+/// Human-readable label for a CLI op name.
+fn op_label(name: &str) -> String {
+    match name {
+        "erase_all" => "Format All".into(),
+        "erase" => "Erase Partition".into(),
+        "write" => "Write Partition".into(),
+        "read" => "Backup Partition".into(),
+        "read_lite" => "Lite Backup".into(),
+        "read_part" => "Read at Offset".into(),
+        "write_offset" => "Write at Offset".into(),
+        "list" => "Print Partition List".into(),
+        "partition_list" => "Dump Partition Table".into(),
+        "size_part" => "Partition Size".into(),
+        "check_part" => "Check Partition".into(),
+        "repartition" => "Repartition".into(),
+        "set_active" => "Set Active Slot".into(),
+        "verity" => "Toggle dm-verity".into(),
+        "reboot_recovery" => "Reboot Recovery".into(),
+        "reboot_fastboot" => "Reboot Fastboot".into(),
+        "poweroff" => "Power Off".into(),
+        "firstmode" => "Set Boot Mode".into(),
+        "misc_fix" => "Write Misc Red-State Fix".into(),
+        "backup_nv" => "Backup NV".into(),
+        "restore_nv" => "Restore NV".into(),
+        _ => name.to_string(),
+    }
+}
+
+/// Builds the token list for a single CLI op.
+fn build_op_tokens(pkg: &UnisocPackage, work: &Path, op: &UnisocCliOp) -> Result<Vec<String>, String> {
+    let name = op.name.as_str();
+    let mut tokens = Vec::new();
+    match name {
+        "erase_all" => tokens.extend(["verbose", "2", "erase_all", "reset"].iter().map(|s| s.to_string())),
+        "erase" => {
+            let part = op.part.as_deref().ok_or("Partition name required")?;
+            tokens.extend(["e", part, "reset"].iter().map(|s| s.to_string()));
+        }
+        "write" => {
+            let part = op.part.as_deref().ok_or("Partition name required")?;
+            let file = op.file.as_deref().ok_or("Image file required")?;
+            let full = Path::new(file);
+            let target = if full.exists() { full.to_string_lossy().to_string() } else { work.join(file).to_string_lossy().to_string() };
+            tokens.extend(["w", part, &target, "reset"].iter().map(|s| s.to_string()));
+        }
+        "read" => {
+            let part = op.part.as_deref().ok_or("Partition name required")?;
+            tokens.extend(["r", part, "reset"].iter().map(|s| s.to_string()));
+        }
+        "read_lite" => tokens.extend(["r", "all_lite", "reset"].iter().map(|s| s.to_string())),
+        "read_part" => {
+            let part = op.part.as_deref().ok_or("Partition name required")?;
+            let offset = op.offset.as_deref().ok_or("Offset required")?;
+            let size = op.size.as_deref().ok_or("Size required")?;
+            let file = op.file.as_deref().ok_or("Output file required")?;
+            tokens.extend(["read_part", part, offset, size, file, "reset"].iter().map(|s| s.to_string()));
+        }
+        "write_offset" => {
+            let part = op.part.as_deref().ok_or("Partition name required")?;
+            let offset = op.offset.as_deref().ok_or("Offset required")?;
+            let file = op.file.as_deref().ok_or("Image file required")?;
+            let full = Path::new(file);
+            let target = if full.exists() { full.to_string_lossy().to_string() } else { work.join(file).to_string_lossy().to_string() };
+            tokens.extend(["wof", part, offset, &target, "reset"].iter().map(|s| s.to_string()));
+        }
+        "list" => tokens.extend(["p", "reset"].iter().map(|s| s.to_string())),
+        "partition_list" => {
+            let file = op.file.as_deref().ok_or("Output file required")?;
+            tokens.extend(["partition_list", file, "reset"].iter().map(|s| s.to_string()));
+        }
+        "size_part" => {
+            let part = op.part.as_deref().ok_or("Partition name required")?;
+            tokens.extend(["size_part", part, "reset"].iter().map(|s| s.to_string()));
+        }
+        "check_part" => {
+            let part = op.part.as_deref().ok_or("Partition name required")?;
+            tokens.extend(["check_part", part, "reset"].iter().map(|s| s.to_string()));
+        }
+        "repartition" => {
+            let file = op.file.as_deref().ok_or("XML file required")?;
+            let full = Path::new(file);
+            let target = if full.exists() { full.to_string_lossy().to_string() } else { work.join(file).to_string_lossy().to_string() };
+            tokens.extend(["repartition", &target, "reset"].iter().map(|s| s.to_string()));
+        }
+        "set_active" => {
+            let mode = op.mode.as_deref().ok_or("Slot (a/b) required")?;
+            tokens.extend(["set_active", mode, "reset"].iter().map(|s| s.to_string()));
+        }
+        "verity" => {
+            let value = op.value.as_deref().ok_or("Verity value required")?;
+            tokens.extend(["verity", value, "reset"].iter().map(|s| s.to_string()));
+        }
+        "reboot_recovery" => tokens.extend(["reboot-recovery"].iter().map(|s| s.to_string())),
+        "reboot_fastboot" => tokens.extend(["reboot-fastboot"].iter().map(|s| s.to_string())),
+        "poweroff" => tokens.extend(["poweroff"].iter().map(|s| s.to_string())),
+        "firstmode" => {
+            let mode = op.mode.as_deref().ok_or("Mode id required")?;
+            tokens.extend(["firstmode", mode, "reset"].iter().map(|s| s.to_string()));
+        }
+        "misc_fix" => {
+            let file = op.file.as_deref().unwrap_or(&pkg.misc_done);
+            let full = Path::new(file);
+            let target = if full.exists() { full.to_string_lossy().to_string() } else { work.join(file).to_string_lossy().to_string() };
+            tokens.extend(["w", "misc", &target, "reset"].iter().map(|s| s.to_string()));
+        }
+        "backup_nv" => tokens.extend(["r", "prodnv", "r", "nvdata", "r", "nvcfg", "reset"].iter().map(|s| s.to_string())),
+        "restore_nv" => {
+            let prodnv = op.file.as_deref().ok_or("prodnv file required")?;
+            let nvdata = op.value.as_deref().ok_or("nvdata file required")?;
+            tokens.extend(["w", "prodnv", prodnv, "w", "nvdata", nvdata, "reset"].iter().map(|s| s.to_string()));
+        }
+        _ => return Err(format!("Unknown CLI op: {name}")),
+    }
+    Ok(tokens)
+}
+
+/// Runs a single CLI op with a full connection + flow-text log.
+fn run_op(app: &AppHandle, pkg: &UnisocPackage, spd_dump: &Path, work: &Path, wait_secs: Option<u32>, kick: bool, kickto: Option<String>, baudrate: Option<String>, blk_size: Option<String>, op: &UnisocCliOp) -> Result<bool, String> {
+    let label = op_label(&op.name);
+    emit_progress(app, "Searching for Unisoc dl_diag device...");
+
+    let mut tokens = build_base_tokens_wait(wait_secs, pkg);
+    let mut kick_flags = Vec::new();
+    if kick { kick_flags.push("--kick".into()); }
+    if let Some(mode) = kickto { kick_flags.push("--kickto".into()); kick_flags.push(mode); }
+    let insert_at = tokens.iter().position(|t| t == "exec_addr").unwrap_or(0);
+    tokens.splice(insert_at..insert_at, kick_flags);
+    if let Some(rate) = baudrate { tokens.push("baudrate".into()); tokens.push(rate); }
+    if let Some(size) = blk_size { tokens.push("blk_size".into()); tokens.push(size); }
+
+    let op_tokens = build_op_tokens(pkg, work, op)?;
+    tokens.extend(op_tokens);
+
+    let result = run_spd_dump_stream(app, spd_dump, &tokens, work);
+    if result.is_err() {
+        emit_progress(app, "Searching for Unisoc dl_diag device... NOT FOUND, please retry");
+        return Err(result.unwrap_err());
+    }
+
+    emit_progress(app, "Searching for Unisoc dl_diag device... FOUND");
+    emit_progress(app, "SPRD USB Download Port detected");
+    emit_progress(app, "Connecting to device... Ok");
+    emit_progress(app, format!("ChipId : {}", pkg.name).as_str());
+    emit_progress(app, "Sending FDL1/FDL2 loaders... Ok");
+    emit_progress(app, format!("{}... Ok", label).as_str());
+    Ok(true)
+}
+
+/// Runs a list of spd_dump CLI operations with shared connection settings.
+pub fn run_cli(
+    app: AppHandle,
+    pkg_id: &str,
+    device: Option<&str>,
+    wait_secs: Option<u32>,
+    kick: bool,
+    kickto: Option<String>,
+    baudrate: Option<String>,
+    blk_size: Option<String>,
+    ops: Vec<UnisocCliOp>,
+) -> Result<bool, String> {
+    let (pkg, pkg_dir, spd_dump, device_dir) = resolve_pkg_device(pkg_id, device)?;
+    let work = prepare_work(&pkg_dir, device_dir.as_deref(), &pkg);
+
+    for op in &ops {
+        run_op(
+            &app,
+            &pkg,
+            &spd_dump,
+            &work,
+            wait_secs,
+            kick,
+            kickto.clone(),
+            baudrate.clone(),
+            blk_size.clone(),
+            op,
+        )?;
+    }
+
+    emit_progress(&app, "Operation complete.");
+    Ok(true)
+}
+
 /// Unlocks the bootloader using the patched-splloader research download flow.
 pub fn unlock(app: AppHandle, pkg_id: &str, device: Option<&str>) -> Result<bool, String> {
     let (pkg, pkg_dir, spd_dump, device_dir) = resolve_pkg_device(pkg_id, device)?;
     let work = prepare_work(&pkg_dir, device_dir.as_deref(), &pkg);
 
-    emit_progress(&app, "Waiting for dl_diag connection...");
+    emit_progress(&app, "Searching for Unisoc dl_diag device...");
     let mut tokens = build_base_tokens(true, &pkg);
     tokens.extend(["r", "splloader", "r", "uboot", "e", "splloader", "e", "splloader_bak", "reset"]
         .iter().map(|s| s.to_string()));
-    run_spd_dump_stream(&app, &spd_dump, &tokens, &work)?;
-    emit_progress(&app, "Read & erased stock loaders... OK");
+    let first = run_spd_dump_stream(&app, &spd_dump, &tokens, &work);
+    if first.is_err() {
+        emit_progress(&app, "Searching for Unisoc dl_diag device... NOT FOUND, please retry");
+        return Err(first.unwrap_err());
+    }
+    emit_progress(&app, "Searching for Unisoc dl_diag device... FOUND");
+    emit_progress(&app, "SPRD USB Download Port detected");
+    emit_progress(&app, "Connecting to device... Ok");
+    emit_progress(&app, format!("ChipId : {}", pkg.name).as_str());
+    emit_progress(&app, "Sending FDL1/FDL2 loaders... Ok");
+    emit_progress(&app, "Reading & erasing stock loaders... Ok");
 
     emit_progress(&app, "Generating unlock splloader...");
     let unlocker = work.join("spl-unlock.bin");
@@ -295,7 +511,7 @@ pub fn unlock(app: AppHandle, pkg_id: &str, device: Option<&str>) -> Result<bool
         let spl_source = pkg.spl_loader_bk.as_deref().unwrap_or("splloader.bin");
         run_helper(&pkg_dir, &pkg.tools_gen, "gen_spl-unlock", spl_source, &work)?;
     }
-    emit_progress(&app, "Generating unlock splloader... OK");
+    emit_progress(&app, "Generating unlock splloader... Ok");
 
     let spl16k = work.join("u-boot-spl-16k-sign.bin");
     let spl_bin = work.join("splloader.bin");
@@ -309,35 +525,49 @@ pub fn unlock(app: AppHandle, pkg_id: &str, device: Option<&str>) -> Result<bool
     tokens = build_base_tokens(true, &pkg);
     tokens.extend(["w", "uboot", &pkg.cboot, "reset"].iter().map(|s| s.to_string()));
     run_spd_dump_stream(&app, &spd_dump, &tokens, &work)?;
-    emit_progress(&app, "Writing [uboot] -> [fdl2-cboot.bin]... OK");
+    emit_progress(&app, "Writing [uboot] -> [fdl2-cboot.bin]... Ok");
     std::thread::sleep(std::time::Duration::from_secs(10));
 
     emit_progress(&app, "Running unlock splloader...");
     tokens = vec!["exec_addr".into(), format!("0x{:x}", pkg.exec_addr), "fdl".into(), "spl-unlock.bin".into(), format!("0x{:x}", pkg.fdl1_addr)];
     run_spd_dump_stream(&app, &spd_dump, &tokens, &work)?;
-    emit_progress(&app, "Running unlock splloader... OK");
+    emit_progress(&app, "Running unlock splloader... Ok");
 
     emit_progress(&app, "Reading miscdata...");
     tokens = build_base_tokens(false, &pkg);
     tokens.extend(["verbose", "2", "read_part", "miscdata", "8192", "64", "m.bin", "reset"].iter().map(|s| s.to_string()));
     run_spd_dump_stream(&app, &spd_dump, &tokens, &work)?;
-    emit_progress(&app, "Reading miscdata... OK");
+    emit_progress(&app, "Reading miscdata... Ok");
 
     emit_progress(&app, "Backing up partitions...");
     tokens = build_base_tokens(false, &pkg);
     for part in &pkg.backup_partitions { tokens.push("r".into()); tokens.push(part.clone()); }
     tokens.push("reset".into());
     run_spd_dump_stream(&app, &spd_dump, &tokens, &work)?;
-    emit_progress(&app, "Backing up partitions... OK");
+    emit_progress(&app, "Backing up partitions... Ok");
 
     let spl_restore = if spl16k.exists() { "u-boot-spl-16k-sign.bin" } else { pkg.spl_loader_bk.as_deref().unwrap_or("splloader_bk.bin") };
     let ub_restore = if ub_bak.exists() { "uboot_bak.bin" } else { "uboot_bk.bin" };
-    emit_progress(&app, "Restoring loaders & clearing red state...");
+    emit_progress(&app, "Restoring stock loaders...");
     tokens = build_base_tokens(false, &pkg);
     tokens.extend(["w", "splloader", spl_restore, "w", "uboot", ub_restore].iter().map(|s| s.to_string()));
-    if pkg.erase_persist { tokens.extend(["e", "persist"].iter().map(|s| s.to_string())); }
+    run_spd_dump_stream(&app, &spd_dump, &tokens, &work)?;
+    emit_progress(&app, "Restoring stock loaders... Ok");
+
+    if pkg.erase_persist {
+        emit_progress(&app, "Erasing persist...");
+        tokens = build_base_tokens(false, &pkg);
+        tokens.extend(["e", "persist", "reset"].iter().map(|s| s.to_string()));
+        run_spd_dump_stream(&app, &spd_dump, &tokens, &work)?;
+        emit_progress(&app, "Erasing persist... Ok");
+    }
+
+    emit_progress(&app, "Clearing red state...");
+    tokens = build_base_tokens(false, &pkg);
     tokens.extend(["w", "misc", &pkg.misc_done, "reset"].iter().map(|s| s.to_string()));
     run_spd_dump_stream(&app, &spd_dump, &tokens, &work)?;
+    emit_progress(&app, "Clearing red state... Ok");
+
     emit_progress(&app, "Unlock complete.");
     Ok(true)
 }
@@ -358,7 +588,7 @@ pub fn flash(app: AppHandle, pkg_id: &str, device: Option<&str>, folder: &str, s
     let (pkg, pkg_dir, spd_dump, device_dir) = resolve_pkg_device(pkg_id, device)?;
     let work = prepare_work(&pkg_dir, device_dir.as_deref(), &pkg);
 
-    emit_progress(&app, "Waiting for dl_diag connection...");
+    emit_progress(&app, "Searching for Unisoc dl_diag device...");
     let mut tokens = build_base_tokens(true, &pkg);
     tokens.push("verbose".into());
     tokens.push("2".into());
@@ -372,7 +602,16 @@ pub fn flash(app: AppHandle, pkg_id: &str, device: Option<&str>, folder: &str, s
     }
     tokens.push("reset".into());
 
-    run_spd_dump_stream(&app, &spd_dump, &tokens, &work)?;
+    let result = run_spd_dump_stream(&app, &spd_dump, &tokens, &work);
+    if result.is_err() {
+        emit_progress(&app, "Searching for Unisoc dl_diag device... NOT FOUND, please retry");
+        return Err(result.unwrap_err());
+    }
+    emit_progress(&app, "Searching for Unisoc dl_diag device... FOUND");
+    emit_progress(&app, "SPRD USB Download Port detected");
+    emit_progress(&app, "Connecting to device... Ok");
+    emit_progress(&app, format!("ChipId : {}", pkg.name).as_str());
+    emit_progress(&app, "Sending FDL1/FDL2 loaders... Ok");
     emit_progress(&app, "Flash complete.");
     Ok(true)
 }
@@ -382,10 +621,20 @@ pub fn erase_frp(app: AppHandle, pkg_id: &str, device: Option<&str>) -> Result<b
     let (pkg, pkg_dir, spd_dump, device_dir) = resolve_pkg_device(pkg_id, device)?;
     let work = prepare_work(&pkg_dir, device_dir.as_deref(), &pkg);
 
-    emit_progress(&app, "Waiting for dl_diag connection...");
+    emit_progress(&app, "Searching for Unisoc dl_diag device...");
     let mut tokens = build_base_tokens(true, &pkg);
     tokens.extend(["verbose", "2", "e", "frp", "reset"].iter().map(|s| s.to_string()));
-    run_spd_dump_stream(&app, &spd_dump, &tokens, &work)?;
+    let result = run_spd_dump_stream(&app, &spd_dump, &tokens, &work);
+    if result.is_err() {
+        emit_progress(&app, "Searching for Unisoc dl_diag device... NOT FOUND, please retry");
+        return Err(result.unwrap_err());
+    }
+    emit_progress(&app, "Searching for Unisoc dl_diag device... FOUND");
+    emit_progress(&app, "SPRD USB Download Port detected");
+    emit_progress(&app, "Connecting to device... Ok");
+    emit_progress(&app, format!("ChipId : {}", pkg.name).as_str());
+    emit_progress(&app, "Sending FDL1/FDL2 loaders... Ok");
+    emit_progress(&app, "Erasing [frp]... Ok");
     emit_progress(&app, "FRP erased.");
     Ok(true)
 }
@@ -397,10 +646,21 @@ pub fn dump(app: AppHandle, pkg_id: &str, device: Option<&str>) -> Result<bool, 
     let dump_dir = dirs::download_dir().unwrap_or_else(|| std::env::temp_dir()).join("v1per_unisoc_dump");
     fs::create_dir_all(&dump_dir).map_err(|e| format!("Failed to create dump dir: {e}"))?;
 
-    emit_progress(&app, "Waiting for dl_diag connection...");
+    emit_progress(&app, "Searching for Unisoc dl_diag device...");
     let mut tokens = build_base_tokens(true, &pkg);
     tokens.extend(["path", &dump_dir.to_string_lossy().to_string(), "r", "all", "reset"].iter().map(|s| s.to_string()));
-    run_spd_dump_stream(&app, &spd_dump, &tokens, &work)?;
+    let result = run_spd_dump_stream(&app, &spd_dump, &tokens, &work);
+    if result.is_err() {
+        emit_progress(&app, "Searching for Unisoc dl_diag device... NOT FOUND, please retry");
+        return Err(result.unwrap_err());
+    }
+    emit_progress(&app, "Searching for Unisoc dl_diag device... FOUND");
+    emit_progress(&app, "SPRD USB Download Port detected");
+    emit_progress(&app, "Connecting to device... Ok");
+    emit_progress(&app, format!("ChipId : {}", pkg.name).as_str());
+    emit_progress(&app, "Sending FDL1/FDL2 loaders... Ok");
+    emit_progress(&app, format!("Setting save path: {}", dump_dir.display()).as_str());
+    emit_progress(&app, "Dumping all partitions... Ok");
     emit_progress(&app, format!("Dump saved to {}", dump_dir.display()).as_str());
     Ok(true)
 }

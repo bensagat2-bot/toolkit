@@ -23,7 +23,7 @@
 import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { sendIpcToMain, rendererOn } from '@renderer/utils/ipc'
-import { useUnisocRunStore } from '@renderer/store/unisocRunStore'
+import { useUnisocRunStore } from './runStore'
 
 const router = useRouter()
 const { pending } = useUnisocRunStore()
@@ -42,6 +42,7 @@ const jobLabel = computed(() => {
     flash: 'Flash Firmware',
     erase_frp: 'Erase FRP',
     dump: 'Dump Partitions',
+    cli: 'Unisoc CLI',
   }
   return labels[pending.value.type] || ''
 })
@@ -93,6 +94,17 @@ async function runJob() {
       await sendIpcToMain('unisoc_erase_frp', { pkg_id: job.pkg_id, device: job.device })
     } else if (job.type === 'dump') {
       await sendIpcToMain('unisoc_dump', { pkg_id: job.pkg_id, device: job.device })
+    } else if (job.type === 'cli') {
+      await sendIpcToMain('unisoc_run_cli', {
+        pkg_id: job.pkg_id,
+        device: job.device,
+        wait_secs: job.cli?.wait_secs,
+        kick: job.cli?.kick,
+        kickto: job.cli?.kickto,
+        baudrate: job.cli?.baudrate,
+        blk_size: job.cli?.blk_size,
+        ops: job.cli?.ops || [],
+      })
     }
     queueLog('Done.', 'success')
   } catch (e) {

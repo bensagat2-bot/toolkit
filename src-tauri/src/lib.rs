@@ -43,6 +43,7 @@ pub fn run() {
             commands::unisoc_flash,
             commands::unisoc_erase_frp,
             commands::unisoc_dump,
+            commands::unisoc_run_cli,
             commands::select_file,
             commands::select_folder,
             commands::confirm_action,

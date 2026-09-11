@@ -38,7 +38,7 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "../resources/Unisoc/**/*"
+      "resources/Unisoc/**/*"
     ],
     "windows": {
       "nsis": {

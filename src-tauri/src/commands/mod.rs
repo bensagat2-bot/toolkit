@@ -176,7 +176,7 @@ pub fn unisoc_scan_folder(path: String) -> Result<serde_json::Value, String> {
     crate::services::unisoc::scan_folder(&path)
 }
 
-#[command]
+#[command(rename_all = "snake_case")]
 pub async fn unisoc_unlock(
     app: tauri::AppHandle,
     pkg_id: String,
@@ -189,7 +189,7 @@ pub async fn unisoc_unlock(
     .map_err(|e| format!("Unlock task failed: {e}"))?
 }
 
-#[command]
+#[command(rename_all = "snake_case")]
 pub async fn unisoc_flash(
     app: tauri::AppHandle,
     pkg_id: String,
@@ -204,7 +204,7 @@ pub async fn unisoc_flash(
     .map_err(|e| format!("Flash task failed: {e}"))?
 }
 
-#[command]
+#[command(rename_all = "snake_case")]
 pub async fn unisoc_erase_frp(
     app: tauri::AppHandle,
     pkg_id: String,
@@ -217,7 +217,7 @@ pub async fn unisoc_erase_frp(
     .map_err(|e| format!("Erase FRP task failed: {e}"))?
 }
 
-#[command]
+#[command(rename_all = "snake_case")]
 pub async fn unisoc_dump(
     app: tauri::AppHandle,
     pkg_id: String,
@@ -228,6 +228,35 @@ pub async fn unisoc_dump(
     })
     .await
     .map_err(|e| format!("Dump task failed: {e}"))?
+}
+
+#[command(rename_all = "snake_case")]
+pub async fn unisoc_run_cli(
+    app: tauri::AppHandle,
+    pkg_id: String,
+    device: Option<String>,
+    wait_secs: Option<u32>,
+    kick: bool,
+    kickto: Option<String>,
+    baudrate: Option<String>,
+    blk_size: Option<String>,
+    ops: Vec<crate::services::unisoc::UnisocCliOp>,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::unisoc::run_cli(
+            app,
+            &pkg_id,
+            device.as_deref(),
+            wait_secs,
+            kick,
+            kickto,
+            baudrate,
+            blk_size,
+            ops,
+        )
+    })
+    .await
+    .map_err(|e| format!("CLI task failed: {e}"))?
 }
 
 #[command]
