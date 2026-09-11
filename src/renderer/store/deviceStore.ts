@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import type { DeviceMode, DetectResult } from '@renderer/types'
 import { sendIpcToMain } from '@renderer/utils/ipc'
 
