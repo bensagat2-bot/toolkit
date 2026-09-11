@@ -1,13 +1,19 @@
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use penumbra_mtk::da::BootMode;
 use penumbra_mtk::hacc::LockState;
 use penumbra_mtk::port::{ConnectionType, PortBackend, PortType};
 use penumbra_mtk::{Device, DeviceBuilder, Storage};
+use tauri::{AppHandle, Emitter};
 
 static SESSION: Mutex<Option<Device<'static, PortType>>> = Mutex::new(None);
+
+fn emit(app: &AppHandle, status: &str, message: String) {
+    let _ = app.emit("mtk:progress", serde_json::json!({ "status": status, "message": message }));
+}
 
 fn leaked(bytes: Vec<u8>) -> &'static [u8] {
     Box::leak(bytes.into_boxed_slice())
@@ -51,14 +57,46 @@ pub fn find_mtk_port() -> bool {
         .unwrap_or(false)
 }
 
-/// Connects to the device, performs the preloader/BROM handshake and optionally
-/// loads a Download Agent to enter DA mode.
-pub fn connect(da_path: Option<String>, auth_path: Option<String>) -> Result<serde_json::Value, String> {
+/// Connects to the device, waiting for it to appear, then performs the preloader/BROM
+/// handshake and optionally loads a Download Agent to enter DA mode.
+pub fn connect(
+    app: AppHandle,
+    da_path: Option<String>,
+    auth_path: Option<String>,
+    timeout_secs: u32,
+) -> Result<serde_json::Value, String> {
     *SESSION.lock().unwrap() = None;
 
-    let port = PortType::find_device(Some(0x0E8D), None, PortBackend::Auto)
-        .map_err(|e| format!("Failed to scan for MediaTek device: {e}"))?
-        .ok_or("No MediaTek device found. Connect a device in BROM or Preloader mode.")?;
+    let timeout = Duration::from_secs(timeout_secs.clamp(1, 600) as u64);
+    let poll_interval = Duration::from_millis(250);
+    let deadline = Instant::now() + timeout;
+
+    emit(
+        &app,
+        "waiting",
+        format!("Waiting up to {}s for a MediaTek device. Put it in BROM/Preloader mode.", timeout.as_secs()),
+    );
+
+    let port = loop {
+        match PortType::find_device(Some(0x0E8D), None, PortBackend::Auto) {
+            Ok(Some(port)) => break port,
+            Ok(None) => {}
+            Err(e) => {
+                emit(&app, "waiting", format!("Scan failed ({e}), retrying..."));
+            }
+        }
+
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "Timed out after {}s waiting for a MediaTek device. Connect the device in BROM or Preloader mode and try again.",
+                timeout.as_secs()
+            ));
+        }
+
+        std::thread::sleep(poll_interval);
+    };
+
+    emit(&app, "found", "MediaTek device detected. Starting handshake...");
 
     let da_data = match da_path {
         Some(path) => Some(leaked(std::fs::read(&path).map_err(|e| format!("Failed to read DA file: {e}"))?)),
@@ -77,6 +115,8 @@ pub fn connect(da_path: Option<String>, auth_path: Option<String>) -> Result<ser
     let mut device = builder.build().map_err(|e| format!("Failed to build device: {e}"))?;
     device.init().map_err(|e| format!("Handshake failed: {e}"))?;
 
+    emit(&app, "handshake", "Handshake complete.");
+
     let connection = conn_type_str(device.get_connection_type()).to_string();
     let hw_code = device.devinfo().hw_code();
     let hw_subcode = device.devinfo().hw_subcode();
@@ -85,12 +125,15 @@ pub fn connect(da_path: Option<String>, auth_path: Option<String>) -> Result<ser
     let mut da_loaded = false;
     let mut partitions: Vec<String> = Vec::new();
     if da_data.is_some() {
+        emit(&app, "da", "Loading Download Agent...");
         device.enter_da_mode().map_err(|e| format!("Failed to load DA: {e}"))?;
         da_loaded = true;
         partitions = device.partitions().iter().map(|p| p.name.clone()).collect();
     }
 
     *SESSION.lock().unwrap() = Some(device);
+
+    emit(&app, "done", if da_loaded { "DA loaded." } else { "Connected (preloader mode)." });
 
     Ok(serde_json::json!({
         "connected": true,

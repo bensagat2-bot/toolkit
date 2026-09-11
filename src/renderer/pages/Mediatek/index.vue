@@ -96,8 +96,8 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, watch } from 'vue'
-import { sendIpcToMain, showSelectDialog, showSaveDialog } from '@renderer/utils/ipc'
+import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue'
+import { sendIpcToMain, showSelectDialog, showSaveDialog, rendererOn } from '@renderer/utils/ipc'
 
 const busy = ref(false)
 const connected = ref(false)
@@ -176,12 +176,16 @@ const findDevice = async () => {
 
 const connect = async () => {
   busy.value = true
-  addLog('Connecting...', 'info')
+  addLog('Connecting to device...', 'info')
   try {
-    const info = await sendIpcToMain('mtk_connect', { da_path: daPath.value, auth_path: authPath.value || null })
+    const info = await sendIpcToMain('mtk_connect', {
+      da_path: daPath.value,
+      auth_path: authPath.value || null,
+      timeout_secs: 120,
+    })
+    addLog('Connecting to device...OK', 'success')
     connected.value = info.connected
     state.value = (info.connection || '').toLowerCase()
-    addLog(`Connected in ${info.connection} mode.`, 'success')
     addLog(`Chip: ${info.chip} (hw 0x${info.hw_code.toString(16).toUpperCase().padStart(4, '0')})`, 'system')
     if (info.da_loaded) {
       addLog(`DA loaded. Found ${info.partitions.length} partitions.`, 'success')
@@ -191,11 +195,26 @@ const connect = async () => {
   } catch (e) {
     connected.value = false
     state.value = 'none'
-    addLog(`Connect failed: ${e}`, 'error')
+    addLog('Connecting to device...FAILED', 'error')
+    addLog(`  ${e}`, 'error')
   } finally {
     busy.value = false
   }
 }
+
+const onProgress = (_event, data) => {
+  if (!data) return
+  if (data.status === 'waiting') addLog(data.message, 'warn')
+  else if (data.status === 'found' || data.status === 'handshake') addLog(data.message, 'system')
+  else if (data.status === 'da') addLog(data.message, 'info')
+  else if (data.status === 'done') addLog(data.message, 'success')
+}
+
+onMounted(() => {
+  rendererOn('mtk:progress', onProgress)
+})
+
+onBeforeUnmount(() => {})
 
 const listPartitions = async () => {
   busy.value = true

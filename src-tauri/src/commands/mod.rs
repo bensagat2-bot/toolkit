@@ -51,8 +51,17 @@ pub fn mtk_find_port() -> bool {
 }
 
 #[command]
-pub fn mtk_connect(da_path: Option<String>, auth_path: Option<String>) -> Result<serde_json::Value, String> {
-    crate::services::mtk::connect(da_path, auth_path)
+pub async fn mtk_connect(
+    app: tauri::AppHandle,
+    da_path: Option<String>,
+    auth_path: Option<String>,
+    timeout_secs: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::mtk::connect(app, da_path, auth_path, timeout_secs.unwrap_or(120))
+    })
+    .await
+    .map_err(|e| format!("Connect task failed: {e}"))?
 }
 
 #[command]
