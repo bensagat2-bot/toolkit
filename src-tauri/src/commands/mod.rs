@@ -43,6 +43,33 @@ pub async fn open_path(path: String) -> Result<(), String> {
     open::that(&path).map_err(|e| e.to_string())
 }
 
+// ── MediaTek Commands ─────────────────────────────────────────
+
+#[command]
+pub fn mtk_find_port() -> bool {
+    crate::services::mtk::find_mtk_port()
+}
+
+#[command]
+pub fn mtk_connect(da_path: Option<String>, auth_path: Option<String>) -> Result<serde_json::Value, String> {
+    crate::services::mtk::connect(da_path, auth_path)
+}
+
+#[command]
+pub fn mtk_device_info() -> Result<serde_json::Value, String> {
+    crate::services::mtk::device_info()
+}
+
+#[command]
+pub fn mtk_list_partitions() -> Result<serde_json::Value, String> {
+    crate::services::mtk::list_partitions()
+}
+
+#[command]
+pub fn mtk_disconnect() -> Result<bool, String> {
+    crate::services::mtk::disconnect()
+}
+
 // ── Unisoc Commands ──────────────────────────────────────────
 
 #[command]

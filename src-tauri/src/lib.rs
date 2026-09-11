@@ -16,6 +16,11 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::detect_device,
+            commands::mtk_find_port,
+            commands::mtk_connect,
+            commands::mtk_device_info,
+            commands::mtk_list_partitions,
+            commands::mtk_disconnect,
             commands::get_packages,
             commands::stop_process,
             commands::unlock_bootloader,
