@@ -1,61 +1,44 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import MediatekTools from './views/MediatekTools/index.vue'
-import UnisocTools from './views/UnisocTools/index.vue'
-import UtilitiesTools from './views/UtilitiesTools/index.vue'
-import Drivers from './views/Drivers/index.vue'
-import Setting from './views/Setting/index.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     {
       path: '/',
-      redirect: '/mediatek',
-    },
-    {
-      path: '/mediatek',
-      name: 'MediatekTools',
-      component: MediatekTools,
-      meta: {
-        name: 'Mediatek Tools',
-      },
+      redirect: '/unisoc',
     },
     {
       path: '/unisoc',
-      name: 'UnisocTools',
-      component: UnisocTools,
-      meta: {
-        name: 'Unisoc Tools',
-      },
+      name: 'Unisoc',
+      component: () => import('./pages/Unisoc/index.vue'),
+      meta: { name: 'Unisoc Tools' },
+    },
+    {
+      path: '/mediatek',
+      name: 'Mediatek',
+      component: () => import('./pages/Mediatek/index.vue'),
+      meta: { name: 'MediaTek Tools' },
     },
     {
       path: '/utilities',
-      name: 'UtilitiesTools',
-      component: UtilitiesTools,
-      meta: {
-        name: 'Utilities Tools',
-      },
+      name: 'Utilities',
+      component: () => import('./pages/Utilities/index.vue'),
+      meta: { name: 'Utilities' },
     },
     {
       path: '/drivers',
       name: 'Drivers',
-      component: Drivers,
-      meta: {
-        name: 'Drivers',
-      },
+      component: () => import('./pages/Drivers/index.vue'),
+      meta: { name: 'Drivers' },
     },
     {
-      path: '/setting',
-      name: 'Setting',
-      component: Setting,
-      meta: {
-        name: 'Setting',
-      },
+      path: '/settings',
+      name: 'Settings',
+      component: () => import('./pages/Settings/index.vue'),
+      meta: { name: 'Settings' },
     },
-    { path: '/:pathMatch(.*)*', redirect: '/mediatek' },
+    { path: '/:pathMatch(.*)*', redirect: '/unisoc' },
   ],
-  linkActiveClass: 'active-link',
-  linkExactActiveClass: 'exact-active-link',
 })
 
 export default router
