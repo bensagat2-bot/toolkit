@@ -283,3 +283,45 @@ pub fn confirm_action(message: String) -> Result<bool, String> {
         .show();
     Ok(result == rfd::MessageDialogResult::Ok)
 }
+
+// ── Utilities Commands ───────────────────────────────────────
+
+#[command]
+pub async fn driver_download(
+    app: tauri::AppHandle,
+    name: String,
+    url: String,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::utils::driver_download(app, name, url)
+    })
+    .await
+    .map_err(|e| format!("Download task failed: {e}"))?
+}
+
+#[command]
+pub async fn utils_root(
+    app: tauri::AppHandle,
+    opts: crate::services::utils::RootOptions,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::utils::root(app, opts))
+        .await
+        .map_err(|e| format!("Root task failed: {e}"))?
+}
+
+#[command]
+pub async fn utils_anykernel(
+    app: tauri::AppHandle,
+    opts: crate::services::utils::AnyKernelOptions,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::utils::anykernel(app, opts))
+        .await
+        .map_err(|e| format!("AnyKernel task failed: {e}"))?
+}
+
+#[command]
+pub async fn utils_force_fastboot(app: tauri::AppHandle) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::utils::force_fastboot(app))
+        .await
+        .map_err(|e| format!("Force fastboot task failed: {e}"))?
+}

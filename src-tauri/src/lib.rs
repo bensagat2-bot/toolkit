@@ -54,6 +54,10 @@ pub fn run() {
             commands::get_device_info,
             commands::open_url,
             commands::open_path,
+            commands::driver_download,
+            commands::utils_root,
+            commands::utils_anykernel,
+            commands::utils_force_fastboot,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -13,6 +13,11 @@ const router = createRouter({
     },
     { path: '/drivers', name: 'Drivers', component: DriversView },
     {
+      path: '/drivers/run',
+      name: 'DriverRun',
+      component: () => import('@/views/DriverRun.vue'),
+    },
+    {
       path: '/unisoc',
       name: 'Unisoc',
       component: () => import('@/pages/Unisoc/index.vue'),
@@ -26,6 +31,11 @@ const router = createRouter({
       path: '/utilities',
       name: 'Utilities',
       component: () => import('@/pages/Utilities/index.vue'),
+    },
+    {
+      path: '/utilities/run',
+      name: 'UtilitiesRun',
+      component: () => import('@/pages/Utilities/run.vue'),
     },
     {
       path: '/settings',

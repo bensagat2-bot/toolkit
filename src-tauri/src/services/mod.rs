@@ -3,3 +3,4 @@ pub mod device;
 pub mod fastboot;
 pub mod mtk;
 pub mod unisoc;
+pub mod utils;

@@ -78,7 +78,7 @@
               </div>
               <div class="footer">
                 <span class="stats">{{ item.downloads }} downloads</span>
-                <a class="download" :href="item.downloadUrl" :download="`${item.id}-${item.version}`">
+                <a class="download" @click.prevent="downloadDriver(item)">
                   <svg
                     viewBox="0 0 24 24"
                     fill="none"
@@ -91,7 +91,7 @@
                     <polyline points="7 10 12 15 17 10" />
                     <line x1="12" y1="15" x2="12" y2="3" />
                   </svg>
-                  <span>Direct Download</span>
+                  <span>Download</span>
                 </a>
               </div>
             </div>
@@ -153,11 +153,14 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useDriversStore } from '@/stores/drivers'
+import { setPending } from '@/store/driverRunStore'
 import { sorts } from '@/data/drivers'
-import type { DriverCategory } from '@/data/drivers'
+import type { DriverCategory, DriverItem } from '@/data/drivers'
 
 const store = useDriversStore()
+const router = useRouter()
 const popupVisible = ref(false)
 const listRef = ref<HTMLElement | null>(null)
 
@@ -199,6 +202,11 @@ const refresh = () => {
   store.setSort('recommended')
   store.setQuery('')
   store.setCategory('all')
+}
+
+const downloadDriver = (item: DriverItem) => {
+  setPending({ name: item.name, url: item.downloadUrl })
+  router.push({ path: '/drivers/run' })
 }
 
 const handleClickOutside = (event: MouseEvent) => {
@@ -557,6 +565,7 @@ onBeforeUnmount(() => {
   color: var(--color-primary);
   background-color: var(--color-button-background);
   text-decoration: none;
+  cursor: pointer;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
   transition: background-color 0.3s ease;
 }

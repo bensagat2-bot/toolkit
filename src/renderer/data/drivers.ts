@@ -55,7 +55,7 @@ export const driverList: DriverItem[] = [
     downloads: '2.4M',
     initials: 'GD',
     gradient: palettes[0],
-    downloadUrl: '#',
+    downloadUrl: 'https://github.com/gsmusbdrivers/usbdrivers/raw/main/latest_usb_driver_windows.zip',
   },
   {
     id: 'adb-interface',
@@ -70,7 +70,7 @@ export const driverList: DriverItem[] = [
     downloads: '1.1M',
     initials: 'AD',
     gradient: palettes[1],
-    downloadUrl: '#',
+    downloadUrl: 'https://github.com/gsmusbdrivers/usbdrivers/raw/main/adb-setup-1.4.3.zip',
   },
   {
     id: 'fastboot-driver',
@@ -85,7 +85,7 @@ export const driverList: DriverItem[] = [
     downloads: '986K',
     initials: 'FD',
     gradient: palettes[2],
-    downloadUrl: '#',
+    downloadUrl: 'https://github.com/gsmusbdrivers/usbdrivers/raw/main/minimal_adb_fastboot_v1.4.3_setup.zip',
   },
   {
     id: 'qualcomm-qdloader',
@@ -100,7 +100,7 @@ export const driverList: DriverItem[] = [
     downloads: '3.2M',
     initials: 'QC',
     gradient: palettes[3],
-    downloadUrl: '#',
+    downloadUrl: 'https://github.com/gsmusbdrivers/usbdrivers/raw/main/Qualcomm_QDLoader_HS-USB_Driver_64bit_Setup.zip',
   },
   {
     id: 'mediatek-vcom',
@@ -115,7 +115,7 @@ export const driverList: DriverItem[] = [
     downloads: '2.1M',
     initials: 'MT',
     gradient: palettes[4],
-    downloadUrl: '#',
+    downloadUrl: 'https://github.com/gsmusbdrivers/usbdrivers/raw/main/MT65xx-USB-VCOM-DRIVERS-Windows.zip',
   },
   {
     id: 'mediatek-preloader',
@@ -130,7 +130,7 @@ export const driverList: DriverItem[] = [
     downloads: '1.6M',
     initials: 'MP',
     gradient: palettes[5],
-    downloadUrl: '#',
+    downloadUrl: 'https://github.com/gsmusbdrivers/usbdrivers/raw/main/MT65xx-USB-VCOM-DRIVERS-Windows.zip',
   },
   {
     id: 'unisoc-diag',
@@ -145,7 +145,7 @@ export const driverList: DriverItem[] = [
     downloads: '1.3M',
     initials: 'UN',
     gradient: palettes[0],
-    downloadUrl: '#',
+    downloadUrl: 'https://github.com/gsmusbdrivers/usbdrivers/raw/main/SPD_Driver_R4.20.0201.zip',
   },
   {
     id: 'samsung-usb',
@@ -160,7 +160,7 @@ export const driverList: DriverItem[] = [
     downloads: '4.0M',
     initials: 'SM',
     gradient: palettes[1],
-    downloadUrl: '#',
+    downloadUrl: 'https://github.com/gsmusbdrivers/usbdrivers/raw/main/SAMSUNG_USB_Driver_for_Mobile_Phones_v1.5.51.0.zip',
   },
   {
     id: 'xiaomi-usb',
@@ -175,7 +175,7 @@ export const driverList: DriverItem[] = [
     downloads: '2.8M',
     initials: 'XM',
     gradient: palettes[2],
-    downloadUrl: '#',
+    downloadUrl: 'https://github.com/gsmusbdrivers/usbdrivers/raw/main/xiaomi_usb_driver.zip',
   },
   {
     id: 'motorola-usb',
@@ -190,7 +190,7 @@ export const driverList: DriverItem[] = [
     downloads: '845K',
     initials: 'MO',
     gradient: palettes[3],
-    downloadUrl: '#',
+    downloadUrl: 'https://github.com/gsmusbdrivers/usbdrivers/raw/main/Motorola_Mobile_Drivers_64bit.zip',
   },
   {
     id: 'qualcomm-hsusb',
@@ -205,7 +205,7 @@ export const driverList: DriverItem[] = [
     downloads: '764K',
     initials: 'QH',
     gradient: palettes[4],
-    downloadUrl: '#',
+    downloadUrl: 'https://github.com/gsmusbdrivers/usbdrivers/raw/main/Qualcomm_QDLoader_HS-USB_Driver_32bit_Setup.zip',
   },
   {
     id: 'mediatek-65xx-adb',
@@ -220,7 +220,7 @@ export const driverList: DriverItem[] = [
     downloads: '542K',
     initials: 'M6',
     gradient: palettes[5],
-    downloadUrl: '#',
+    downloadUrl: 'https://github.com/gsmusbdrivers/usbdrivers/raw/main/android-cdc-driver.zip',
   },
   {
     id: 'unisoc-sprd',
@@ -235,7 +235,7 @@ export const driverList: DriverItem[] = [
     downloads: '1.9M',
     initials: 'SP',
     gradient: palettes[0],
-    downloadUrl: '#',
+    downloadUrl: 'https://github.com/gsmusbdrivers/usbdrivers/raw/main/Spreadtrum_SCI_USB2Serial.zip',
   },
   {
     id: 'nokia-usb',
@@ -250,6 +250,6 @@ export const driverList: DriverItem[] = [
     downloads: '438K',
     initials: 'NK',
     gradient: palettes[1],
-    downloadUrl: '#',
+    downloadUrl: 'https://github.com/gsmusbdrivers/usbdrivers/raw/main/HTC_Driver_4.17.0.001.zip',
   },
 ]
