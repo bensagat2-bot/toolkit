@@ -25,7 +25,7 @@
     <div id="main">
       <Toolbar />
       <div class="main-content">
-        <router-view v-slot="slotProps">
+        <router-view v-slot="(slotProps: any)">
           <transition name="page-fade" mode="out-in">
             <component :is="slotProps.Component" class="view-container" />
           </transition>
