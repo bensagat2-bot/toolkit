@@ -321,6 +321,7 @@ pub struct FlashOptions {
     pub use_preloader_from_fw: bool,
     pub force_brom_erase_preloader: bool,
     pub timeout_secs: Option<u32>,
+    pub partitions: Option<Vec<String>>,
 }
 
 fn parse_scatter(content: &str) -> Result<ScatterFile, String> {
@@ -466,6 +467,11 @@ pub fn flash(app: AppHandle, opts: FlashOptions) -> Result<serde_json::Value, St
     for part in scatter.partitions() {
         if !part.download {
             continue;
+        }
+        if let Some(list) = &opts.partitions {
+            if !list.iter().any(|n| n.eq_ignore_ascii_case(&part.part.name)) {
+                continue;
+            }
         }
         let Some(p) = &part.path else { continue };
         let full = base.join(p);

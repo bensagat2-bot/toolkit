@@ -6,6 +6,11 @@ const router = createRouter({
   routes: [
     { path: '/', redirect: '/mediatek' },
     { path: '/mediatek', name: 'MediaTek', component: () => import('@/pages/Mediatek/index.vue') },
+    {
+      path: '/mediatek/flash',
+      name: 'MediaTekFlash',
+      component: () => import('@/pages/MediatekFlash/index.vue'),
+    },
     { path: '/drivers', name: 'Drivers', component: DriversView },
     {
       path: '/unisoc',

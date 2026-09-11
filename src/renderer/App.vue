@@ -5,7 +5,9 @@
       <Toolbar id="toolbar" />
       <main id="view">
         <router-view v-slot="{ Component }">
-          <component :is="Component" class="view-container" />
+          <transition name="page" mode="out-in">
+            <component :is="Component" class="view-container" />
+          </transition>
         </router-view>
       </main>
       <PlayBar id="player" />
@@ -64,5 +66,20 @@ import PlayBar from '@/components/layout/PlayBar.vue'
   top: 0;
   width: 100%;
   height: 100%;
+}
+
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 </style>
