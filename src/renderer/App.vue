@@ -35,7 +35,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, onMounted, h } from 'vue'
 import Toolbar from './components/layout/Toolbar.vue'
 import { useIconSize } from './utils/useIconSize'

@@ -50,5 +50,9 @@
   "setting__other_tray_theme": "Tray theme",
   "setting__update": "Update",
   "setting__update_auto": "Auto update",
-  "setting__update_check": "Check for updates"
+  "setting__update_check": "Check for updates",
+  "theme_edit_modal__pick_color": "Pick Color",
+  "theme_edit_modal__pick_last_color": "Last Color",
+  "theme_edit_modal__pick_save": "Save",
+  "theme_edit_modal__pick_cancel": "Cancel"
 }

@@ -50,5 +50,9 @@
   "setting__other_tray_theme": "托盘主题",
   "setting__update": "更新",
   "setting__update_auto": "自动更新",
-  "setting__update_check": "检查更新"
+  "setting__update_check": "检查更新",
+  "theme_edit_modal__pick_color": "选取颜色",
+  "theme_edit_modal__pick_last_color": "上次颜色",
+  "theme_edit_modal__pick_save": "保存",
+  "theme_edit_modal__pick_cancel": "取消"
 }

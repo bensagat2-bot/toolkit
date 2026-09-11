@@ -50,5 +50,9 @@
   "setting__other_tray_theme": "系統匣佈景主題",
   "setting__update": "更新",
   "setting__update_auto": "自動更新",
-  "setting__update_check": "檢查更新"
+  "setting__update_check": "檢查更新",
+  "theme_edit_modal__pick_color": "選取顏色",
+  "theme_edit_modal__pick_last_color": "上次顏色",
+  "theme_edit_modal__pick_save": "儲存",
+  "theme_edit_modal__pick_cancel": "取消"
 }
