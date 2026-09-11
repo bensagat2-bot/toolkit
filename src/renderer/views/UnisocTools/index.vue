@@ -84,8 +84,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { sendIpcToMain, rendererOn, rendererOff, showSelectDialog } from '@renderer/utils/ipc'
+import { ref, computed, onMounted, nextTick } from 'vue'
+import { sendIpcToMain } from '@renderer/utils/ipc'
 import { PACKAGES, DEVICE_ALIASES } from './unisoc-data'
 
 const selectedPkg = ref('ums9230')
@@ -115,16 +115,10 @@ function appendLog(text, type = 'info') {
 
 function clearLog() { logLines.value = [] }
 
-function listenOutput(channel, callback) {
-  const handler = (_, msg) => callback(msg)
-  rendererOn(channel, handler)
-  return () => rendererOff(channel, handler)
-}
-
 async function detectDevice() {
   appendLog('Detecting device...', 'system')
   try {
-    const result = await sendIpcToMain('unisoc:detect')
+    const result = await sendIpcToMain('detect_device')
     deviceMode.value = result.mode
     const labels = { adb: 'ADB', fastboot: 'Fastboot', download: 'Download', none: 'No Device' }
     deviceModeLabel.value = labels[result.mode] || 'No Device'
@@ -135,94 +129,82 @@ async function detectDevice() {
 }
 
 async function runUnlock() {
-  const confirmed = await sendIpcToMain('unisoc:confirm', 'Unlock bootloader? This will modify boot partitions.')
+  const confirmed = await sendIpcToMain('confirm_action', { message: 'Unlock bootloader? This will modify boot partitions.' })
   if (!confirmed) return
   isRunning.value = true; clearLog(); appendLog('Starting unlock...', 'system')
-  const cleanup = listenOutput('unisoc:unlock:output', msg => {
-    if (msg.type === 'output') appendLog(msg.data)
-    else if (msg.type === 'error') appendLog(msg.data, 'error')
-    else if (msg.type === 'done') { isRunning.value = false; appendLog(msg.code === 0 ? 'Done.' : `Exit ${msg.code}`, msg.code === 0 ? 'success' : 'error') }
-  })
-  await sendIpcToMain('unisoc:unlock', { pkgId: selectedPkg.value, device: selectedDevice.value || undefined }).catch(e => appendLog(`${e}`, 'error'))
-  cleanup()
+  try {
+    await sendIpcToMain('unlock_bootloader', { pkgId: selectedPkg.value, device: selectedDevice.value || null })
+    appendLog('Unlock completed.', 'success')
+  } catch (e) { appendLog(`Error: ${e}`, 'error') }
+  isRunning.value = false
 }
 
 async function runEraseFrp() {
-  const confirmed = await sendIpcToMain('unisoc:confirm', 'Erase FRP partition?')
+  const confirmed = await sendIpcToMain('confirm_action', { message: 'Erase FRP partition?' })
   if (!confirmed) return
   isRunning.value = true; clearLog(); appendLog('Erasing FRP...', 'system')
-  const cleanup = listenOutput('unisoc:erasefrp:output', msg => {
-    if (msg.type === 'output') appendLog(msg.data)
-    else if (msg.type === 'error') appendLog(msg.data, 'error')
-    else if (msg.type === 'done') { isRunning.value = false; appendLog(msg.code === 0 ? 'Done.' : `Exit ${msg.code}`, msg.code === 0 ? 'success' : 'error') }
-  })
-  await sendIpcToMain('unisoc:erasefrp', { pkgId: selectedPkg.value, device: selectedDevice.value || undefined }).catch(e => appendLog(`${e}`, 'error'))
-  cleanup()
+  try {
+    await sendIpcToMain('erase_frp', { pkgId: selectedPkg.value, device: selectedDevice.value || null })
+    appendLog('FRP erase completed.', 'success')
+  } catch (e) { appendLog(`Error: ${e}`, 'error') }
+  isRunning.value = false
 }
 
 async function runParts() {
   isRunning.value = true; clearLog(); appendLog('Reading partitions...', 'system')
-  const cleanup = listenOutput('unisoc:parts:output', msg => {
-    if (msg.type === 'output') appendLog(msg.data)
-    else if (msg.type === 'partitions') { for (const line of msg.data.split('\n')) if (line.trim()) appendLog(line.trim()) }
-    else if (msg.type === 'error') appendLog(msg.data, 'error')
-    else if (msg.type === 'done') { isRunning.value = false; appendLog(msg.code === 0 ? 'Done.' : `Exit ${msg.code}`, msg.code === 0 ? 'success' : 'error') }
-  })
-  await sendIpcToMain('unisoc:parts', { pkgId: selectedPkg.value, device: selectedDevice.value || undefined }).catch(e => appendLog(`${e}`, 'error'))
-  cleanup()
+  try {
+    const result = await sendIpcToMain('list_partitions', { pkgId: selectedPkg.value, device: selectedDevice.value || null })
+    for (const line of result.split('\n')) if (line.trim()) appendLog(line.trim())
+    appendLog('Done.', 'success')
+  } catch (e) { appendLog(`Error: ${e}`, 'error') }
+  isRunning.value = false
 }
 
 async function runDump() {
-  const confirmed = await sendIpcToMain('unisoc:confirm', 'Dump ALL partitions? This may take a long time.')
+  const confirmed = await sendIpcToMain('confirm_action', { message: 'Dump ALL partitions? This may take a long time.' })
   if (!confirmed) return
   isRunning.value = true; clearLog(); appendLog('Starting dump...', 'system')
-  const cleanup = listenOutput('unisoc:dump:output', msg => {
-    if (msg.type === 'output') appendLog(msg.data)
-    else if (msg.type === 'error') appendLog(msg.data, 'error')
-    else if (msg.type === 'done') { isRunning.value = false; appendLog(msg.code === 0 ? 'Done.' : `Exit ${msg.code}`, msg.code === 0 ? 'success' : 'error') }
-  })
-  await sendIpcToMain('unisoc:dump', { pkgId: selectedPkg.value, device: selectedDevice.value || undefined }).catch(e => appendLog(`${e}`, 'error'))
-  cleanup()
+  try {
+    await sendIpcToMain('dump_partitions', { pkgId: selectedPkg.value, device: selectedDevice.value || null })
+    appendLog('Dump completed.', 'success')
+  } catch (e) { appendLog(`Error: ${e}`, 'error') }
+  isRunning.value = false
 }
 
 async function runFlash() {
-  const confirmed = await sendIpcToMain('unisoc:confirm', `Flash ${flashPartition.value}?`)
+  const confirmed = await sendIpcToMain('confirm_action', { message: `Flash ${flashPartition.value}?` })
   if (!confirmed) return
   isRunning.value = true; clearLog(); appendLog('Flashing...', 'system')
-  const cleanup = listenOutput('unisoc:flash:output', msg => {
-    if (msg.type === 'output') appendLog(msg.data)
-    else if (msg.type === 'error') appendLog(msg.data, 'error')
-    else if (msg.type === 'done') { isRunning.value = false; appendLog(msg.code === 0 ? 'Done.' : `Exit ${msg.code}`, msg.code === 0 ? 'success' : 'error') }
-  })
-  await sendIpcToMain('unisoc:flash', { pkgId: selectedPkg.value, device: selectedDevice.value || undefined, partition: flashPartition.value, image: flashImage.value }).catch(e => appendLog(`${e}`, 'error'))
-  cleanup()
+  try {
+    await sendIpcToMain('flash_partition', { pkgId: selectedPkg.value, device: selectedDevice.value || null, partition: flashPartition.value, image: flashImage.value })
+    appendLog('Flash completed.', 'success')
+  } catch (e) { appendLog(`Error: ${e}`, 'error') }
+  isRunning.value = false
 }
 
 async function runErase() {
-  const confirmed = await sendIpcToMain('unisoc:confirm', `ERASE ${flashPartition.value}? This is destructive!`)
+  const confirmed = await sendIpcToMain('confirm_action', { message: `ERASE ${flashPartition.value}? This is destructive!` })
   if (!confirmed) return
   isRunning.value = true; clearLog(); appendLog('Erasing...', 'system')
-  const cleanup = listenOutput('unisoc:erase:output', msg => {
-    if (msg.type === 'output') appendLog(msg.data)
-    else if (msg.type === 'error') appendLog(msg.data, 'error')
-    else if (msg.type === 'done') { isRunning.value = false; appendLog(msg.code === 0 ? 'Done.' : `Exit ${msg.code}`, msg.code === 0 ? 'success' : 'error') }
-  })
-  await sendIpcToMain('unisoc:erase', { pkgId: selectedPkg.value, device: selectedDevice.value || undefined, partition: flashPartition.value }).catch(e => appendLog(`${e}`, 'error'))
-  cleanup()
+  try {
+    await sendIpcToMain('erase_partition', { pkgId: selectedPkg.value, device: selectedDevice.value || null, partition: flashPartition.value })
+    appendLog('Erase completed.', 'success')
+  } catch (e) { appendLog(`Error: ${e}`, 'error') }
+  isRunning.value = false
 }
 
 async function stopOperation() {
-  await sendIpcToMain('unisoc:stop')
+  await sendIpcToMain('stop_process')
   appendLog('Stopped.', 'warn')
 }
 
 async function selectImage() {
-  const file = await sendIpcToMain('unisoc:select-file')
-  if (file) flashImage.value = file
+  const result = await sendIpcToMain('select_file', { title: 'Select image file', filters: ['img', 'bin', 'pac'] })
+  if (result) flashImage.value = result
 }
 
 onMounted(async () => {
-  packageInstalled.value = await sendIpcToMain('unisoc:get-packages')
+  packageInstalled.value = await sendIpcToMain('get_packages')
   detectDevice()
 })
 </script>

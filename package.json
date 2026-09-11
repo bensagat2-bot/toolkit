@@ -2,20 +2,18 @@
   "name": "v1per-servicing",
   "version": "1.0.0",
   "description": "Android servicing toolkit for MediaTek, Unisoc, and utilities",
-  "main": "./dist/main.js",
+  "type": "module",
   "scripts": {
-    "dev": "cross-env NODE_OPTIONS=--max-http-header-size=200000 node build-config/runner-dev.js",
-    "build": "node build-config/pack.js",
-    "pack:win:setup:x64": "node build-config/build-pack.js target=win arch=x64 type=setup",
-    "build:main": "cross-env NODE_ENV=production webpack --config build-config/main/webpack.config.prod.js --progress",
+    "dev": "tauri dev",
+    "dev:renderer": "cross-env NODE_OPTIONS=--max-http-header-size=200000 node build-config/runner-dev.js",
+    "build": "tauri build",
     "build:renderer": "cross-env NODE_ENV=production webpack --config build-config/renderer/webpack.config.prod.js --progress",
-    "build:theme": "node src/common/theme/createThemes.js",
-    "lint": "eslint --ext .ts,.js,.vue -f node_modules/eslint-formatter-friendly src",
-    "lint:fix": "eslint --ext .ts,.js,.vue -f node_modules/eslint-formatter-friendly --fix src",
-    "postinstall": "electron-builder install-app-deps"
+    "build:main": "cross-env NODE_ENV=production webpack --config build-config/main/webpack.config.prod.js --progress",
+    "lint": "eslint --ext .ts,.js,.vue src",
+    "lint:fix": "eslint --ext .ts,.js,.vue --fix src"
   },
   "browserslist": [
-    "Electron 22.3.0"
+    "last 2 Chrome versions"
   ],
   "engines": {
     "node": ">= 22",
@@ -115,45 +113,26 @@
     "webpack-merge": "^6.0.1"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-shell": "^2.0.0",
     "@simonwep/pickr": "^1.9.1",
-    "better-sqlite3": "^12.9.0",
-    "bufferutil": "^4.1.0",
-    "comlink": "~4.3.1",
-    "crypto-js": "^4.2.0",
-    "electron-log": "^5.4.3",
-    "font-list": "^2.0.2",
-    "iconv-lite": "^0.7.2",
-    "jschardet": "^3.1.4",
-    "long": "^5.3.2",
-    "message2call": "^0.1.3",
-    "needle": "github:lyswhut/needle#93299ac841b7e9a9f82ca7279b88aaaeda404060",
-    "sortablejs": "^1.15.7",
-    "tunnel": "^0.0.6",
-    "undici": "^7.25.0",
-    "utf-8-validate": "^6.0.6",
     "vue": "~3.3.13",
-    "vue-router": "~4.5.1",
-    "ws": "^8.20.0"
+    "vue-router": "~4.5.1"
   },
-  "overrides": {
-    "got": "^11",
-    "json5": "latest",
-    "node-abi": "latest",
-    "minimatch": "latest",
-    "semver": "latest",
-    "posthtml": "latest",
-    "svg-transform-loader": {
-      "postcss": "^8"
-    },
-    "svg-sprite-loader": {
-      "postcss": "^8"
-    },
-    "svg-baker": {
-      "postcss": "^8"
-    },
-    "braces": "latest",
-    "node-gyp-build": "latest",
-    "micromatch": "latest",
-    "http-cache-semantics": "latest"
-  }
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "cross-env": "^10.1.0",
+    "css-loader": "^7.1.4",
+    "less": "^4.6.4",
+    "less-loader": "^12.3.2",
+    "mini-css-extract-plugin": "^2.10.2",
+    "ts-loader": "^9.5.7",
+    "typescript": "5.9.3",
+    "vue-loader": "^17.4.2",
+    "webpack": "^5.106.2",
+    "webpack-cli": "^7.0.2",
+    "webpack-dev-server": "5.2.3",
+    "html-webpack-plugin": "^5.6.7"
+  },
+  "overrides": {}
 }

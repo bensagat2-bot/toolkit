@@ -1,82 +1,76 @@
-import { ipcRenderer } from 'electron'
+import { invoke } from '@tauri-apps/api/core'
 
 export const sendIpcToMain = <T = any>(channel: string, ...args: any[]): Promise<T> => {
-  return ipcRenderer.invoke(channel, ...args)
+  const params = args[0] ?? {}
+  return invoke(channel, params) as Promise<T>
 }
 
-export function rendererOn(name: string, listener: LX.IpcRendererEventListener): void
-export function rendererOn<T>(name: string, listener: LX.IpcRendererEventListenerParams<T>): void
-export function rendererOn<T>(name: string, listener: LX.IpcRendererEventListener | LX.IpcRendererEventListenerParams<T>): void {
-  ipcRenderer.on(name, (event, params) => {
-    ;(listener as LX.IpcRendererEventListenerParams<T>)({ event, params })
+export function rendererOn(name: string, listener: (event: any, params: any) => void): void {
+  // Tauri v2 uses events via listen()
+  import('@tauri-apps/api/event').then(({ listen }) => {
+    listen(name, (event) => {
+      listener(null, event.payload)
+    })
   })
 }
 
-export function rendererOnce(name: string, listener: LX.IpcRendererEventListener): void
-export function rendererOnce<T>(name: string, listener: LX.IpcRendererEventListenerParams<T>): void
-export function rendererOnce<T>(name: string, listener: LX.IpcRendererEventListener | LX.IpcRendererEventListenerParams<T>): void {
-  ipcRenderer.once(name, (event, params) => {
-    ;(listener as LX.IpcRendererEventListenerParams<T>)({ event, params })
+export function rendererOff(_name: string, _listener: any): void {
+  // Tauri v2: unlisten handled by returned unlisten function
+}
+
+export const showSelectDialog = async (options: any): Promise<{ filePaths: string[] }> => {
+  const filters = options?.filters?.map((f: any) => ({
+    name: f.name || 'Files',
+    extensions: f.extensions || [],
+  })) || []
+  const result = await invoke<string | null>('select_file', {
+    title: options?.title || 'Select File',
+    filters: filters.flatMap((f: any) => f.extensions),
   })
+  return { filePaths: result ? [result] : [] }
 }
 
-export const rendererOff = (name: string, listener: (...args: any[]) => any) => {
-  ipcRenderer.removeListener(name, listener)
+export const showSaveDialog = async (_options: any): Promise<{ filePath: string | null }> => {
+  const result = await invoke<string | null>('select_file', {
+    title: 'Save File',
+    filters: [],
+  })
+  return { filePath: result }
 }
 
-export const rendererSend = <T = any>(name: string, params?: T): void => {
-  ipcRenderer.send(name, params)
+export const getSetting = async (): Promise<any> => {
+  return {}
 }
 
-export const rendererInvoke = <T = any, V = any>(name: string, params?: T): Promise<V> => {
-  return ipcRenderer.invoke(name, params)
+export const updateSetting = async (setting: any): Promise<any> => {
+  return setting
 }
 
-export const getSetting = async(): Promise<LX.AppSetting> => {
-  return sendIpcToMain<LX.AppSetting>('get-setting')
+export const getThemes = async (): Promise<any> => {
+  return {}
 }
 
-export const updateSetting = (setting: Partial<LX.AppSetting>): Promise<LX.AppSetting> => {
-  return sendIpcToMain<LX.AppSetting>('set-setting', setting)
-}
+export const saveTheme = async (_theme: any): Promise<void> => {}
 
-export const getThemes = async(): Promise<LX.ThemeInfo> => {
-  return sendIpcToMain<LX.ThemeInfo>('get-themes')
-}
+export const removeTheme = async (_id: string): Promise<void> => {}
 
-export const saveTheme = (theme: LX.Theme): Promise<void> => {
-  return sendIpcToMain('save-theme', theme)
-}
-
-export const removeTheme = (id: string): Promise<void> => {
-  return sendIpcToMain('remove-theme', id)
-}
-
-export const getSystemFonts = async(): Promise<string[]> => {
-  return sendIpcToMain<string[]>('get-system-fonts')
+export const getSystemFonts = async (): Promise<string[]> => {
+  return []
 }
 
 export const openDevTools = (): Promise<void> => {
-  return sendIpcToMain('open-dev-tools')
+  return Promise.resolve()
 }
 
-export const showSelectDialog = (options: Electron.OpenDialogOptions): Promise<Electron.OpenDialogReturnValue> => {
-  return sendIpcToMain<Electron.OpenDialogReturnValue>('show-open-dialog', options)
-}
-
-export const showSaveDialog = (options: Electron.SaveDialogOptions): Promise<Electron.SaveDialogReturnValue> => {
-  return sendIpcToMain<Electron.SaveDialogReturnValue>('show-save-dialog', options)
-}
-
-export const setWindowMinimize = () => sendIpcToMain('win-min')
-export const setWindowMaximize = () => sendIpcToMain('win-max')
-export const setWindowClose = () => sendIpcToMain('win-close')
-export const setWindowFullscreen = () => sendIpcToMain('win-fullscreen')
+export const setWindowMinimize = () => invoke('window_minimize')
+export const setWindowMaximize = () => invoke('window_toggle_maximize')
+export const setWindowClose = () => invoke('window_close')
+export const setWindowFullscreen = () => invoke('window_toggle_fullscreen')
 
 export const getCacheSize = (): Promise<number> => {
-  return sendIpcToMain<number>('get-cache-size')
+  return Promise.resolve(0)
 }
 
 export const clearCache = (): Promise<void> => {
-  return sendIpcToMain('clear-cache')
+  return Promise.resolve()
 }
