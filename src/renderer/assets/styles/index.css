@@ -21,63 +21,66 @@ body {
 }
 
 :root {
-  --color-primary: rgb(77, 175, 124);
-  --color-primary-alpha-100: rgba(77, 175, 124, 0.9);
-  --color-primary-alpha-200: rgba(77, 175, 124, 0.8);
-  --color-primary-alpha-300: rgba(77, 175, 124, 0.7);
-  --color-primary-alpha-400: rgba(77, 175, 124, 0.6);
-  --color-primary-alpha-500: rgba(77, 175, 124, 0.5);
-  --color-primary-alpha-600: rgba(77, 175, 124, 0.4);
-  --color-primary-alpha-700: rgba(77, 175, 124, 0.3);
-  --color-primary-alpha-800: rgba(77, 175, 124, 0.2);
-  --color-primary-alpha-900: rgba(77, 175, 124, 0.1);
-  --color-primary-dark-100: rgb(69, 158, 112);
-  --color-primary-dark-100-alpha-200: rgba(69, 158, 112, 0.8);
-  --color-primary-light-100: rgb(113, 191, 150);
-  --color-primary-light-100-alpha-600: rgba(77, 175, 124, 0.22);
-  --color-primary-light-100-alpha-800: rgba(77, 175, 124, 0.16);
-  --color-primary-light-200: rgb(141, 204, 171);
-  --color-primary-light-300: rgb(164, 214, 188);
-  --color-primary-light-300-alpha-600: rgba(77, 175, 124, 0.18);
-  --color-primary-light-300-alpha-700: rgba(77, 175, 124, 0.12);
-  --color-primary-light-300-alpha-800: rgba(77, 175, 124, 0.1);
-  --color-primary-light-400: rgb(182, 222, 201);
-  --color-primary-light-400-alpha-600: rgba(77, 175, 124, 0.2);
-  --color-primary-light-400-alpha-700: rgba(77, 175, 124, 0.14);
-  --color-primary-light-400-alpha-800: rgba(113, 191, 150, 0.55);
-  --color-primary-light-500: rgba(255, 255, 255, 0.1);
-  --color-primary-light-600: #151d26;
-  --color-primary-light-600-alpha-100: #0f1419;
-  --color-primary-light-900: #121a22;
-  --color-primary-light-900-alpha-200: rgba(18, 26, 34, 0.9);
-  --color-primary-light-1000: #0f1419;
-  --color-primary-dark-200: rgb(62, 142, 101);
-  --color-primary-dark-200-alpha-700: rgba(77, 175, 124, 0.9);
+  --color-primary: rgb(90, 104, 214);
+  --color-primary-alpha-100: rgba(90, 104, 214, 0.9);
+  --color-primary-alpha-200: rgba(90, 104, 214, 0.8);
+  --color-primary-alpha-300: rgba(90, 104, 214, 0.7);
+  --color-primary-alpha-400: rgba(90, 104, 214, 0.6);
+  --color-primary-alpha-500: rgba(90, 104, 214, 0.5);
+  --color-primary-alpha-600: rgba(90, 104, 214, 0.4);
+  --color-primary-alpha-700: rgba(90, 104, 214, 0.3);
+  --color-primary-alpha-800: rgba(90, 104, 214, 0.2);
+  --color-primary-alpha-900: rgba(90, 104, 214, 0.1);
+  --color-primary-dark-100: rgb(81, 94, 193);
+  --color-primary-dark-100-alpha-200: rgba(81, 94, 193, 0.8);
+  --color-primary-dark-500-alpha-200: rgba(53, 61, 126, 0.8);
+  --color-primary-light-100: rgb(123, 134, 222);
+  --color-primary-light-100-alpha-500: rgba(123, 134, 222, 0.5);
+  --color-primary-light-100-alpha-600: rgba(123, 134, 222, 0.4);
+  --color-primary-light-100-alpha-800: rgba(123, 134, 222, 0.2);
+  --color-primary-light-200: rgb(149, 158, 229);
+  --color-primary-light-300: rgb(171, 178, 234);
+  --color-primary-light-300-alpha-600: rgba(171, 178, 234, 0.4);
+  --color-primary-light-300-alpha-700: rgba(171, 178, 234, 0.3);
+  --color-primary-light-300-alpha-800: rgba(171, 178, 234, 0.2);
+  --color-primary-light-400: rgb(187, 193, 238);
+  --color-primary-light-400-alpha-600: rgba(187, 193, 238, 0.4);
+  --color-primary-light-400-alpha-700: rgba(187, 193, 238, 0.3);
+  --color-primary-light-400-alpha-800: rgba(187, 193, 238, 0.2);
+  --color-primary-light-500: rgb(201, 205, 241);
+  --color-primary-light-600: rgb(212, 216, 244);
+  --color-primary-light-600-alpha-100: rgba(212, 216, 244, 0.9);
+  --color-primary-light-600-alpha-600: rgba(212, 216, 244, 0.4);
+  --color-primary-light-900: rgb(233, 235, 249);
+  --color-primary-light-900-alpha-200: rgba(233, 235, 249, 0.8);
+  --color-primary-light-1000: rgb(255, 255, 255);
+  --color-primary-dark-200: rgb(73, 84, 173);
+  --color-primary-dark-200-alpha-700: rgba(73, 84, 173, 0.3);
 
-  --color-app-background: #0f1419;
-  --color-main-background: #121a22;
-  --color-content-background: #0f1419;
-  --color-nav-font: var(--color-primary-light-200);
+  --color-app-background: var(--color-primary-light-600-alpha-600);
+  --color-main-background: rgba(255, 255, 255, 0.9);
+  --color-content-background: var(--color-primary-light-1000);
+  --color-nav-font: var(--color-primary);
 
-  --color-font: rgb(224, 229, 236);
-  --color-font-label: rgb(132, 141, 153);
-  --color-primary-font-hover: var(--color-primary);
-  --color-primary-font-active: var(--color-primary);
-  --color-button-font: var(--color-primary);
-  --color-button-background: rgba(255, 255, 255, 0.07);
-  --color-button-background-hover: rgba(255, 255, 255, 0.12);
-  --color-button-background-active: rgba(77, 175, 124, 0.28);
-  --color-button-background-selected: rgba(77, 175, 124, 0.4);
-  --color-btn-close: #e57373;
+  --color-font: rgb(66, 66, 66);
+  --color-font-label: rgb(155, 155, 155);
+  --color-primary-font-hover: var(--color-primary-alpha-300);
+  --color-primary-font-active: var(--color-primary-dark-100-alpha-200);
+  --color-button-font: var(--color-primary-alpha-100);
+  --color-button-background: var(--color-primary-light-400-alpha-700);
+  --color-button-background-hover: var(--color-primary-light-300-alpha-600);
+  --color-button-background-active: var(--color-primary-light-100-alpha-600);
+  --color-button-background-selected: var(--color-primary-alpha-600);
+  --color-btn-close: #fab4a0;
   --color-list-header-border-bottom: 1px solid var(--color-primary-alpha-900);
 
   --accent-primary: var(--color-primary);
   --bg-primary: var(--color-main-background);
-  --bg-secondary: #151d26;
-  --bg-tertiary: #1a2330;
-  --border-primary: rgba(255, 255, 255, 0.09);
-  --text-primary: rgb(224, 229, 236);
-  --text-secondary: rgb(132, 141, 153);
+  --bg-secondary: var(--color-primary-light-600);
+  --bg-tertiary: var(--color-primary-light-500);
+  --border-primary: rgba(90, 104, 214, 0.16);
+  --text-primary: var(--color-font);
+  --text-secondary: var(--color-font-label);
 }
 
 button,
@@ -102,8 +105,8 @@ ul {
 }
 
 ::selection {
-  color: #0f1419;
-  background: var(--color-primary-alpha-600);
+  color: var(--color-primary-dark-500-alpha-200);
+  background: var(--color-primary-light-100-alpha-500);
 }
 
 .scroll::-webkit-scrollbar {

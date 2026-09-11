@@ -45,7 +45,11 @@
       <div class="output-card">
         <div class="output-card-header">
           <span>Firmware Partitions</span>
-          <span v-if="partitions.length" class="selection-count">{{ selected.length }} / {{ partitions.length }} selected</span>
+          <div class="header-actions">
+            <span v-if="partitions.length" class="selection-count">{{ selected.length }} / {{ partitions.length }} selected</span>
+            <button class="btn-link" :disabled="!partitions.length" @click="selectAll">Select All</button>
+            <button class="btn-link" :disabled="!partitions.length" @click="deselectAll">Deselect All</button>
+          </div>
         </div>
         <div class="partition-table-wrap">
           <table class="partition-table">
@@ -143,6 +147,14 @@ function toggleAll() {
   selected.value = allChecked.value ? [] : partitions.value.map((p) => p.name)
 }
 
+function selectAll() {
+  selected.value = partitions.value.map((p) => p.name)
+}
+
+function deselectAll() {
+  selected.value = []
+}
+
 function formatSize(bytes) {
   if (!bytes) return '0'
   const units = ['B', 'KB', 'MB', 'GB']
@@ -178,7 +190,7 @@ function startFlash() {
 .start-btn { width: 100%; padding: 10px; font-size: 13px; font-weight: 600; margin-top: auto; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border-primary); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 12px; cursor: pointer; transition: all 0.15s; white-space: nowrap; svg { width: 14px; height: 14px; flex-shrink: 0; } &:hover:not(:disabled) { border-color: var(--accent-primary); } &:disabled { opacity: 0.4; cursor: not-allowed; } &.btn-sm { padding: 3px 8px; font-size: 11px; } &.btn-primary { background: var(--accent-primary); color: #fff; border-color: var(--accent-primary); } }
 .output-card { flex: 1; display: flex; flex-direction: column; border: 1px solid var(--border-primary); border-radius: 6px; overflow: hidden; min-width: 0; }
-.output-card-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; background: var(--bg-tertiary); border-bottom: 1px solid var(--border-primary); span { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); } .selection-count { color: var(--accent-primary); } }
+.output-card-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; background: var(--bg-tertiary); border-bottom: 1px solid var(--border-primary); span { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); } .header-actions { display: flex; align-items: center; gap: 10px; } .selection-count { color: var(--accent-primary); text-transform: none; letter-spacing: 0; } .btn-link { background: none; border: none; color: var(--accent-primary); font-size: 11px; cursor: pointer; padding: 0; &:hover:not(:disabled) { text-decoration: underline; } &:disabled { opacity: 0.4; cursor: not-allowed; } } }
 .partition-table-wrap { flex: 1; overflow-y: auto; }
 .partition-table { width: 100%; border-collapse: collapse; font-size: 12px; th, td { text-align: left; padding: 4px 10px; white-space: nowrap; } thead th { position: sticky; top: 0; background: var(--bg-tertiary); color: var(--text-secondary); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px; } tbody tr { border-top: 1px solid var(--border-primary); color: var(--text-primary); cursor: pointer; &:hover { background: var(--bg-tertiary); } &.selected { background: color-mix(in srgb, var(--accent-primary) 8%, transparent); } } td:first-child { font-weight: 500; } .col-check { width: 28px; text-align: center; input { accent-color: var(--accent-primary); cursor: pointer; } } .empty-row td { color: var(--text-secondary); font-style: italic; text-align: center; } }
 </style>

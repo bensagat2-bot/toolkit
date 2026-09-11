@@ -353,6 +353,7 @@ pub fn load_scatter(path: &str) -> Result<serde_json::Value, String> {
     let parts: Vec<serde_json::Value> = scatter
         .partitions()
         .iter()
+        .filter(|p| p.download)
         .map(|p| {
             let filename = p
                 .path
