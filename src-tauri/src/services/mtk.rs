@@ -350,7 +350,7 @@ pub fn load_scatter(path: &str) -> Result<serde_json::Value, String> {
     let scatter = parse_scatter(&content)?;
 
     let parts: Vec<serde_json::Value> = scatter
-        .parts()
+        .partitions()
         .iter()
         .map(|p| {
             let filename = p
@@ -423,10 +423,10 @@ pub fn flash(app: AppHandle, opts: FlashOptions) -> Result<serde_json::Value, St
     };
 
     let da_data = da_data.map(leaked);
-    let auth_data = opts
-        .auth_path
-        .as_ref()
-        .map(|p| leaked(std::fs::read(p).map_err(|e| format!("Failed to read auth file: {e}"))?));
+    let auth_data = match &opts.auth_path {
+        Some(p) => Some(leaked(std::fs::read(p).map_err(|e| format!("Failed to read auth file: {e}"))?)),
+        None => None,
+    };
 
     let builder = DeviceBuilder::new(port);
     let builder = if let Some(da) = da_data { builder.with_da_data(da) } else { builder };
@@ -463,7 +463,7 @@ pub fn flash(app: AppHandle, opts: FlashOptions) -> Result<serde_json::Value, St
     let mut flashed: Vec<String> = Vec::new();
     let mut total_bytes = 0usize;
 
-    for part in scatter.parts() {
+    for part in scatter.partitions() {
         if !part.download {
             continue;
         }
