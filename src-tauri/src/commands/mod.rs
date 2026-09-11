@@ -70,6 +70,71 @@ pub fn mtk_disconnect() -> Result<bool, String> {
     crate::services::mtk::disconnect()
 }
 
+#[command]
+pub fn mtk_write_partition(partition: String, path: String) -> Result<(), String> {
+    crate::services::mtk::write_partition(&partition, &path)
+}
+
+#[command]
+pub fn mtk_read_partition(partition: String, path: String) -> Result<(), String> {
+    crate::services::mtk::read_partition(&partition, &path)
+}
+
+#[command]
+pub fn mtk_erase_partition(partition: String) -> Result<(), String> {
+    crate::services::mtk::erase_partition(&partition)
+}
+
+#[command]
+pub fn mtk_reboot(mode: String) -> Result<(), String> {
+    crate::services::mtk::reboot(&mode)
+}
+
+#[command]
+pub fn mtk_bootctrl() -> Result<serde_json::Value, String> {
+    crate::services::mtk::bootctrl()
+}
+
+#[command]
+pub fn mtk_storage() -> Result<serde_json::Value, String> {
+    crate::services::mtk::storage()
+}
+
+#[command]
+pub fn mtk_set_seccfg_lock_state(unlock: bool) -> Result<(), String> {
+    crate::services::mtk::set_seccfg_lock_state(unlock)
+}
+
+#[command]
+pub fn mtk_read_efuses(path: String) -> Result<(), String> {
+    crate::services::mtk::read_efuses(&path)
+}
+
+#[command]
+pub fn mtk_write_efuses(path: String) -> Result<(), String> {
+    crate::services::mtk::write_efuses(&path)
+}
+
+#[command]
+pub fn mtk_read_register(addr: u64) -> Result<serde_json::Value, String> {
+    crate::services::mtk::read_register(addr)
+}
+
+#[command]
+pub fn mtk_write_register(addr: u64, value: u32) -> Result<(), String> {
+    crate::services::mtk::write_register(addr, value)
+}
+
+#[command]
+pub fn mtk_peek(addr: u64, size: u64, path: String) -> Result<(), String> {
+    crate::services::mtk::peek(addr, size as usize, &path)
+}
+
+#[command]
+pub fn mtk_poke(addr: u64, path: String) -> Result<(), String> {
+    crate::services::mtk::poke(addr, &path)
+}
+
 // ── Unisoc Commands ──────────────────────────────────────────
 
 #[command]

@@ -72,8 +72,8 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
