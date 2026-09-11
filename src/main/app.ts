@@ -25,6 +25,7 @@ export const createMainWindow = () => {
     show: false,
     frame: false,
     transparent: true,
+    icon: path.join(__dirname, '../../resources/icons/icon.ico'),
     webPreferences: {
       nodeIntegrationInWorker: true,
       contextIsolation: false,

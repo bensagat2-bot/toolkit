@@ -27,16 +27,6 @@ app.on('ready', () => {
         console.log('[main window] An error occurred: ', err)
       })
   })
-  global.lx.event_app.on('desktop_lyric_window_created', (win: any) => {
-    openDevTools(win.webContents)
-    installExtension(VUEJS_DEVTOOLS, { session: win.webContents.session })
-      .then((name: string) => {
-        console.log(`[lyric window] Added Extension:  ${name}`)
-      })
-      .catch((err: Error) => {
-        console.log('[lyric window] An error occurred: ', err)
-      })
-  })
 })
 
 // Require `main` process to boot app
