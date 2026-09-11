@@ -4,10 +4,23 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
-use tauri::AppHandle;
-use tauri::Emitter;
 
 static CURRENT_PROCESS: Mutex<Option<u32>> = Mutex::new(None);
+static mut RESOURCE_DIR: Option<PathBuf> = None;
+
+pub fn set_resource_dir(path: PathBuf) {
+    unsafe { RESOURCE_DIR = Some(path); }
+}
+
+fn get_resource_dir() -> PathBuf {
+    unsafe {
+        RESOURCE_DIR.clone().unwrap_or_else(|| {
+            // Fallback: walk up from exe
+            let exe = std::env::current_exe().unwrap_or_default();
+            exe.parent().unwrap_or(&std::path::PathBuf::from(".")).to_path_buf()
+        })
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnisocPackage {
@@ -74,6 +87,14 @@ fn get_packages() -> HashMap<String, UnisocPackage> {
 }
 
 fn find_unisoc_root() -> Option<PathBuf> {
+    let resource_dir = get_resource_dir();
+    // Check resource_dir/Unisoc (Tauri bundled resources)
+    let candidate = resource_dir.join("Unisoc");
+    if candidate.exists() { return Some(candidate); }
+    // Check resource_dir/resources/Unisoc
+    let candidate = resource_dir.join("resources").join("Unisoc");
+    if candidate.exists() { return Some(candidate); }
+    // Fallback: walk up from exe
     let exe = std::env::current_exe().ok()?;
     let mut dir = exe.parent()?;
     for _ in 0..6 {

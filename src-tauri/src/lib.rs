@@ -7,6 +7,13 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .setup(|app| {
+            // Set resource directory for Unisoc tools
+            if let Some(resource_dir) = app.path().resource_dir().ok() {
+                services::unisoc::set_resource_dir(resource_dir);
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::detect_device,
             commands::get_packages,
