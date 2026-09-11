@@ -80,7 +80,7 @@ pub fn connect(
     );
 
     let port = loop {
-        match PortType::find_device(Some(0x0E8D), None, PortBackend::Auto) {
+        match PortType::find_and_open(Some(0x0E8D), None, PortBackend::Auto) {
             Ok(Some(port)) => break port,
             Ok(None) => {}
             Err(e) => {
@@ -384,9 +384,9 @@ pub fn flash(app: AppHandle, opts: FlashOptions) -> Result<serde_json::Value, St
 
     let port = loop {
         let res = if opts.force_brom {
-            PortType::find_device(Some(0x0E8D), Some(0x0003), PortBackend::Auto)
+            PortType::find_and_open(Some(0x0E8D), Some(0x0003), PortBackend::Auto)
         } else {
-            PortType::find_device(Some(0x0E8D), None, PortBackend::Auto)
+            PortType::find_and_open(Some(0x0E8D), None, PortBackend::Auto)
         };
         match res {
             Ok(Some(p)) => break p,
