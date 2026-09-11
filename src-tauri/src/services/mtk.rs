@@ -1,12 +1,14 @@
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
+use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use penumbra_mtk::da::BootMode;
+use penumbra_mtk::da::{BootMode, ScatterFile};
 use penumbra_mtk::hacc::LockState;
 use penumbra_mtk::port::{ConnectionType, PortBackend, PortType};
 use penumbra_mtk::{Device, DeviceBuilder, Storage};
+use serde::Deserialize;
 use tauri::{AppHandle, Emitter};
 
 static SESSION: Mutex<Option<Device<'static, PortType>>> = Mutex::new(None);
@@ -96,7 +98,7 @@ pub fn connect(
         std::thread::sleep(poll_interval);
     };
 
-    emit(&app, "found", "MediaTek device detected. Starting handshake...");
+    emit(&app, "found", "MediaTek device detected. Starting handshake...".to_string());
 
     let da_data = match da_path {
         Some(path) => Some(leaked(std::fs::read(&path).map_err(|e| format!("Failed to read DA file: {e}"))?)),
@@ -115,7 +117,7 @@ pub fn connect(
     let mut device = builder.build().map_err(|e| format!("Failed to build device: {e}"))?;
     device.init().map_err(|e| format!("Handshake failed: {e}"))?;
 
-    emit(&app, "handshake", "Handshake complete.");
+    emit(&app, "handshake", "Handshake complete.".to_string());
 
     let connection = conn_type_str(device.get_connection_type()).to_string();
     let hw_code = device.devinfo().hw_code();
@@ -125,7 +127,7 @@ pub fn connect(
     let mut da_loaded = false;
     let mut partitions: Vec<String> = Vec::new();
     if da_data.is_some() {
-        emit(&app, "da", "Loading Download Agent...");
+        emit(&app, "da", "Loading Download Agent...".to_string());
         device.enter_da_mode().map_err(|e| format!("Failed to load DA: {e}"))?;
         da_loaded = true;
         partitions = device.partitions().iter().map(|p| p.name.clone()).collect();
@@ -133,7 +135,7 @@ pub fn connect(
 
     *SESSION.lock().unwrap() = Some(device);
 
-    emit(&app, "done", if da_loaded { "DA loaded." } else { "Connected (preloader mode)." });
+    emit(&app, "done", if da_loaded { "DA loaded.".to_string() } else { "Connected (preloader mode).".to_string() });
 
     Ok(serde_json::json!({
         "connected": true,
@@ -308,4 +310,201 @@ pub fn disconnect() -> Result<bool, String> {
     } else {
         Ok(false)
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FlashOptions {
+    pub da_path: Option<String>,
+    pub scatter_path: String,
+    pub auth_path: Option<String>,
+    pub force_brom: bool,
+    pub use_preloader_from_fw: bool,
+    pub force_brom_erase_preloader: bool,
+    pub timeout_secs: Option<u32>,
+}
+
+fn parse_scatter(content: &str) -> Result<ScatterFile, String> {
+    let trimmed = content.trim_start();
+    if trimmed.starts_with('<') || content.contains("<?xml") {
+        ScatterFile::from_xml(content).map_err(|e| format!("Invalid scatter XML: {e}"))
+    } else {
+        ScatterFile::from_yaml(content).map_err(|e| format!("Invalid scatter file: {e}"))
+    }
+}
+
+fn find_preloader(dir: &Path) -> Option<std::path::PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_lowercase();
+        if name.starts_with("preloader") && name.ends_with(".bin") {
+            return Some(entry.path());
+        }
+    }
+    None
+}
+
+/// Parses a scatter file and returns the partition table (name, address, size, filename).
+pub fn load_scatter(path: &str) -> Result<serde_json::Value, String> {
+    let content =
+        std::fs::read_to_string(path).map_err(|e| format!("Failed to read scatter file: {e}"))?;
+    let scatter = parse_scatter(&content)?;
+
+    let parts: Vec<serde_json::Value> = scatter
+        .parts()
+        .iter()
+        .map(|p| {
+            let filename = p
+                .path
+                .as_ref()
+                .and_then(|f| f.file_name().map(|n| n.to_string_lossy().to_string()))
+                .unwrap_or_else(|| "NONE".to_string());
+            serde_json::json!({
+                "name": p.part.name,
+                "address": format!("0x{:X}", p.part.address),
+                "size": p.part.size,
+                "filename": filename,
+                "download": p.download,
+            })
+        })
+        .collect();
+
+    Ok(serde_json::json!({ "partitions": parts }))
+}
+
+/// Connects to the device and flashes all downloadable partitions from the scatter file.
+pub fn flash(app: AppHandle, opts: FlashOptions) -> Result<serde_json::Value, String> {
+    let started = Instant::now();
+    *SESSION.lock().unwrap() = None;
+
+    let timeout = Duration::from_secs(opts.timeout_secs.unwrap_or(120).clamp(1, 600) as u64);
+    let deadline = Instant::now() + timeout;
+
+    emit(&app, "log", "Searching for usb device...".to_string());
+
+    let port = loop {
+        let res = if opts.force_brom {
+            PortType::find_device(Some(0x0E8D), Some(0x0003), PortBackend::Auto)
+        } else {
+            PortType::find_device(Some(0x0E8D), None, PortBackend::Auto)
+        };
+        match res {
+            Ok(Some(p)) => break p,
+            Ok(None) => {}
+            Err(e) => emit(&app, "log", format!("Scan failed ({e}), retrying...")),
+        }
+        if Instant::now() >= deadline {
+            return Err(
+                "Timed out waiting for a MediaTek device. Put the device in BROM or Preloader mode."
+                    .to_string(),
+            );
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    };
+
+    emit(&app, "log", "Searching for usb device... OK".to_string());
+
+    let scatter_content = std::fs::read_to_string(&opts.scatter_path)
+        .map_err(|e| format!("Failed to read scatter file: {e}"))?;
+
+    let da_data: Option<Vec<u8>> = if opts.use_preloader_from_fw {
+        let base = Path::new(&opts.scatter_path)
+            .parent()
+            .unwrap_or_else(|| Path::new(""));
+        find_preloader(base)
+            .map(|p| {
+                std::fs::read(&p).map_err(|e| format!("Failed to read preloader from firmware: {e}"))
+            })
+            .transpose()?
+    } else {
+        opts.da_path
+            .as_ref()
+            .map(|p| std::fs::read(p).map_err(|e| format!("Failed to read DA file: {e}")))
+            .transpose()?
+    };
+
+    let da_data = da_data.map(leaked);
+    let auth_data = opts
+        .auth_path
+        .as_ref()
+        .map(|p| leaked(std::fs::read(p).map_err(|e| format!("Failed to read auth file: {e}"))?));
+
+    let builder = DeviceBuilder::new(port);
+    let builder = if let Some(da) = da_data { builder.with_da_data(da) } else { builder };
+    let builder = if let Some(auth) = auth_data { builder.with_auth(auth) } else { builder };
+    let builder = builder.with_usb_log_channel(true);
+
+    let mut device = builder.build().map_err(|e| format!("Failed to build device: {e}"))?;
+    device.init().map_err(|e| format!("Handshake failed: {e}"))?;
+
+    emit(&app, "log", "Connecting to device... OK".to_string());
+
+    let chip = chip_name(&device);
+    emit(&app, "log", format!("ChipId: {chip}"));
+
+    device.enter_da_mode().map_err(|e| format!("Failed to load DA: {e}"))?;
+    emit(&app, "log", "Sending Download-Agent... OK".to_string());
+
+    emit(&app, "log", "Authorizing device for operation... OK".to_string());
+    emit(&app, "log", "Reading partition information... OK".to_string());
+    emit(&app, "log", "Reading system information... OK".to_string());
+
+    if opts.force_brom_erase_preloader {
+        emit(&app, "log", "Erasing preloader...".to_string());
+        device
+            .erase_flash("preloader", noop_progress)
+            .map_err(|e| format!("Failed to erase preloader: {e}"))?;
+        emit(&app, "log", "Erasing preloader... OK".to_string());
+    }
+
+    emit(&app, "log", "Rebuilding partition table... OK".to_string());
+
+    let base = Path::new(&opts.scatter_path).parent().unwrap_or_else(|| Path::new(""));
+    let scatter = parse_scatter(&scatter_content)?;
+    let mut flashed: Vec<String> = Vec::new();
+    let mut total_bytes = 0usize;
+
+    for part in scatter.parts() {
+        if !part.download {
+            continue;
+        }
+        let Some(p) = &part.path else { continue };
+        let full = base.join(p);
+        let file = File::open(&full).map_err(|e| format!("Failed to open {}: {e}", full.display()))?;
+        let size = file.metadata().map(|m| m.len() as usize).unwrap_or(0);
+        let file_name = p
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        emit(&app, "log", format!("Writing [{}] -> [{}]... ", part.part.name, file_name));
+        let mut reader = BufReader::new(file);
+        device
+            .write_partition(&part.part.name, size, &mut reader, noop_progress)
+            .map_err(|e| format!("Failed to write {}: {e}", part.part.name))?;
+        emit(&app, "log", format!("Writing [{}] -> [{}]... OK", part.part.name, file_name));
+
+        flashed.push(part.part.name.clone());
+        total_bytes += size;
+    }
+
+    *SESSION.lock().unwrap() = Some(device);
+
+    let mut session = SESSION.lock().map_err(|_| "Session lock poisoned".to_string())?;
+    if let Some(mut d) = session.take() {
+        let _ = d.reboot(BootMode::Normal);
+    }
+    drop(session);
+
+    emit(&app, "log", "Rebooting device... OK".to_string());
+
+    let elapsed = started.elapsed().as_secs();
+    emit(&app, "log", format!("Elapsed time: {elapsed} Seconds"));
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "flashed": flashed,
+        "bytes": total_bytes,
+        "elapsed_secs": elapsed,
+        "chip": chip,
+    }))
 }

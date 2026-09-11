@@ -51,6 +51,21 @@ pub fn mtk_find_port() -> bool {
 }
 
 #[command]
+pub fn mtk_load_scatter(path: String) -> Result<serde_json::Value, String> {
+    crate::services::mtk::load_scatter(&path)
+}
+
+#[command]
+pub async fn mtk_flash(
+    app: tauri::AppHandle,
+    opts: crate::services::mtk::FlashOptions,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::mtk::flash(app, opts))
+        .await
+        .map_err(|e| format!("Flash task failed: {e}"))?
+}
+
+#[command]
 pub async fn mtk_connect(
     app: tauri::AppHandle,
     da_path: Option<String>,

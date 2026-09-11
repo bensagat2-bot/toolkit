@@ -17,6 +17,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::detect_device,
             commands::mtk_find_port,
+            commands::mtk_load_scatter,
+            commands::mtk_flash,
             commands::mtk_connect,
             commands::mtk_device_info,
             commands::mtk_list_partitions,
