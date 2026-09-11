@@ -54,5 +54,20 @@
   "theme_edit_modal__pick_color": "Pick Color",
   "theme_edit_modal__pick_last_color": "Last Color",
   "theme_edit_modal__pick_save": "Save",
-  "theme_edit_modal__pick_cancel": "Cancel"
+  "theme_edit_modal__pick_cancel": "Cancel",
+  "unisoc_chipset": "Chipset",
+  "unisoc_device": "Device",
+  "unisoc_detect": "Detect",
+  "unisoc_unlock": "Unlock Bootloader",
+  "unisoc_erase_frp": "Erase FRP",
+  "unisoc_list_parts": "List Partitions",
+  "unisoc_dump_all": "Dump All",
+  "unisoc_flash": "Flash Partition",
+  "unisoc_erase": "Erase Partition",
+  "unisoc_stop": "Stop",
+  "unisoc_partition": "Partition name",
+  "unisoc_no_device": "No Device",
+  "unisoc_adb_device": "ADB Device",
+  "unisoc_fastboot": "Fastboot",
+  "unisoc_download_mode": "Download Mode"
 }

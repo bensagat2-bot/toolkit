@@ -47,6 +47,16 @@ export const WIN_MAIN_RENDERER_EVENT_NAME = {
   get_themes: 'get_themes',
   save_theme: 'save_theme',
   remove_theme: 'remove_theme',
+  unisoc_detect: 'unisoc:detect',
+  unisoc_stop: 'unisoc:stop',
+  unisoc_get_packages: 'unisoc:get-packages',
+  unisoc_unlock: 'unisoc:unlock',
+  unisoc_dump: 'unisoc:dump',
+  unisoc_flash: 'unisoc:flash',
+  unisoc_erase: 'unisoc:erase',
+  unisoc_parts: 'unisoc:parts',
+  unisoc_erasefrp: 'unisoc:erasefrp',
+  unisoc_select_file: 'unisoc:select-file',
 }
 
 export const HOTKEY_RENDERER_EVENT_NAME = {
