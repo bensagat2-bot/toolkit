@@ -172,33 +172,62 @@ pub fn stop_process() -> Result<bool, String> {
 }
 
 #[command]
-pub fn unlock_bootloader(pkg_id: String, device: Option<String>) -> Result<bool, String> {
-    crate::services::unisoc::unlock(&pkg_id, device.as_deref())
+pub fn unisoc_scan_folder(path: String) -> Result<serde_json::Value, String> {
+    crate::services::unisoc::scan_folder(&path)
 }
 
 #[command]
-pub fn dump_partitions(pkg_id: String, device: Option<String>) -> Result<bool, String> {
-    crate::services::unisoc::dump(&pkg_id, device.as_deref())
+pub async fn unisoc_unlock(
+    app: tauri::AppHandle,
+    pkg_id: String,
+    device: Option<String>,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::unisoc::unlock(app, &pkg_id, device.as_deref())
+    })
+    .await
+    .map_err(|e| format!("Unlock task failed: {e}"))?
 }
 
 #[command]
-pub fn flash_partition(pkg_id: String, device: Option<String>, partition: String, image: String) -> Result<bool, String> {
-    crate::services::unisoc::flash(&pkg_id, device.as_deref(), &partition, &image)
+pub async fn unisoc_flash(
+    app: tauri::AppHandle,
+    pkg_id: String,
+    device: Option<String>,
+    folder: String,
+    partitions: Vec<crate::services::unisoc::UnisocFlashPart>,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::unisoc::flash(app, &pkg_id, device.as_deref(), &folder, partitions)
+    })
+    .await
+    .map_err(|e| format!("Flash task failed: {e}"))?
 }
 
 #[command]
-pub fn erase_partition(pkg_id: String, device: Option<String>, partition: String) -> Result<bool, String> {
-    crate::services::unisoc::erase(&pkg_id, device.as_deref(), &partition)
+pub async fn unisoc_erase_frp(
+    app: tauri::AppHandle,
+    pkg_id: String,
+    device: Option<String>,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::unisoc::erase_frp(app, &pkg_id, device.as_deref())
+    })
+    .await
+    .map_err(|e| format!("Erase FRP task failed: {e}"))?
 }
 
 #[command]
-pub fn list_partitions(pkg_id: String, device: Option<String>) -> Result<String, String> {
-    crate::services::unisoc::list_parts(&pkg_id, device.as_deref())
-}
-
-#[command]
-pub fn erase_frp(pkg_id: String, device: Option<String>) -> Result<bool, String> {
-    crate::services::unisoc::erase_frp(&pkg_id, device.as_deref())
+pub async fn unisoc_dump(
+    app: tauri::AppHandle,
+    pkg_id: String,
+    device: Option<String>,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::unisoc::dump(app, &pkg_id, device.as_deref())
+    })
+    .await
+    .map_err(|e| format!("Dump task failed: {e}"))?
 }
 
 #[command]
@@ -207,6 +236,12 @@ pub fn select_file(title: String, filters: Vec<String>) -> Result<Option<String>
         .set_title(&title)
         .add_filter("Files", &filters)
         .pick_file();
+    Ok(result.map(|p| p.to_string_lossy().to_string()))
+}
+
+#[command]
+pub fn select_folder(title: String) -> Result<Option<String>, String> {
+    let result = rfd::FileDialog::new().set_title(&title).pick_folder();
     Ok(result.map(|p| p.to_string_lossy().to_string()))
 }
 

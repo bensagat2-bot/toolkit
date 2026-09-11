@@ -38,6 +38,11 @@ export const showSaveDialog = async (_options: any): Promise<{ filePath: string 
   return { filePath: result }
 }
 
+export const showSelectFolder = async (title = 'Select Folder'): Promise<string> => {
+  const result = await invoke<string | null>('select_folder', { title })
+  return result || ''
+}
+
 export const getSetting = async (): Promise<any> => {
   return {}
 }

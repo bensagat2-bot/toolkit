@@ -18,6 +18,11 @@ const router = createRouter({
       component: () => import('@/pages/Unisoc/index.vue'),
     },
     {
+      path: '/unisoc/run',
+      name: 'UnisocRun',
+      component: () => import('@/pages/UnisocRun/index.vue'),
+    },
+    {
       path: '/utilities',
       name: 'Utilities',
       component: () => import('@/pages/Utilities/index.vue'),
