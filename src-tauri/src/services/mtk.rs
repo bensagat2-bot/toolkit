@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use penumbra_mtk::da::BootMode;
 use penumbra_mtk::hacc::LockState;
 use penumbra_mtk::port::{ConnectionType, PortBackend, PortType};
-use penumbra_mtk::{Device, DeviceBuilder};
+use penumbra_mtk::{Device, DeviceBuilder, Storage};
 
 static SESSION: Mutex<Option<Device<'static, PortType>>> = Mutex::new(None);
 
@@ -33,13 +33,13 @@ fn chip_name(device: &Device<'static, PortType>) -> String {
 fn noop_progress(_written: usize, _total: usize) {}
 
 fn device_mut() -> Result<std::sync::MutexGuard<'static, Option<Device<'static, PortType>>>, String> {
-    SESSION.lock().map_err(|_| "Session lock poisoned".into())
+    SESSION.lock().map_err(|_| "Session lock poisoned".to_string())
 }
 
 fn device_ref() -> Result<std::sync::MutexGuard<'static, Option<Device<'static, PortType>>>, String> {
-    let session = SESSION.lock().map_err(|_| "Session lock poisoned".into())?;
+    let session = SESSION.lock().map_err(|_| "Session lock poisoned".to_string())?;
     if session.is_none() {
-        return Err("No device connected. Connect first.".into());
+        return Err("No device connected. Connect first.".to_string());
     }
     Ok(session)
 }
@@ -185,7 +185,7 @@ pub fn bootctrl() -> Result<serde_json::Value, String> {
 pub fn storage() -> Result<serde_json::Value, String> {
     let mut session = device_mut()?;
     let device = session.as_mut().ok_or("No device connected. Connect first.")?;
-    let kind = device.get_storage().map(|s| s.as_str().to_string()).unwrap_or_else(|| "Unknown".into());
+    let kind = device.get_storage().map(|s| s.as_str().to_string()).unwrap_or_else(|| "Unknown".to_string());
     Ok(serde_json::json!({ "storage": kind }))
 }
 
@@ -258,7 +258,7 @@ pub fn poke(addr: u64, path: &str) -> Result<(), String> {
 
 /// Powers down the device and closes the connection.
 pub fn disconnect() -> Result<bool, String> {
-    let mut session = SESSION.lock().map_err(|_| "Session lock poisoned".into())?;
+    let mut session = SESSION.lock().map_err(|_| "Session lock poisoned".to_string())?;
     if let Some(mut device) = session.take() {
         let _ = device.shutdown();
         Ok(true)

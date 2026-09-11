@@ -4,7 +4,7 @@
 */
 
 use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use acon::{MMIO, SoC};
 use hacc::BootControl;
@@ -13,7 +13,7 @@ use crate::Partition;
 
 #[derive(Clone, Default)]
 pub struct DevInfo {
-    inner: Rc<RefCell<DevInfoData>>,
+    inner: Arc<RefCell<DevInfoData>>,
 }
 
 #[derive(Default, Clone)]
@@ -30,7 +30,7 @@ pub struct DevInfoData {
 
 impl DevInfo {
     pub fn new(data: DevInfoData) -> Self {
-        Self { inner: Rc::new(RefCell::new(data)) }
+        Self { inner: Arc::new(RefCell::new(data)) }
     }
 
     pub fn data(&self) -> DevInfoData {
