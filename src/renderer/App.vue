@@ -8,6 +8,7 @@
           <component :is="Component" class="view-container" />
         </router-view>
       </main>
+      <PlayBar id="player" />
     </div>
   </div>
 </template>
@@ -15,6 +16,7 @@
 <script setup lang="ts">
 import Aside from '@/components/layout/Aside.vue'
 import Toolbar from '@/components/layout/Toolbar.vue'
+import PlayBar from '@/components/layout/PlayBar.vue'
 </script>
 
 <style scoped>
@@ -45,7 +47,8 @@ import Toolbar from '@/components/layout/Toolbar.vue'
   box-shadow: 0 0 4px rgba(0, 0, 0, 0.1);
 }
 
-#toolbar {
+#toolbar,
+#player {
   flex: none;
 }
 

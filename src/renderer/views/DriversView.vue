@@ -2,31 +2,36 @@
   <div class="container">
     <div class="header">
       <div class="left">
-        <div :class="['select', { active: popupVisible }]">
-          <div class="select-label" @click.stop="popupVisible = !popupVisible">
+        <div :class="['tagList', { active: popupVisible }]">
+          <div class="label" @click.stop="popupVisible = !popupVisible">
             <span>{{ currentCategory }}</span>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </div>
-          <div class="popup">
-            <ul class="scroll">
-              <li
-                v-for="cat in categories"
-                :key="cat.id"
-                :class="{ active: store.category === cat.id }"
-                @click="handleCategory(cat.id)"
+            <div class="icon">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
               >
-                {{ cat.name }}
-              </li>
-            </ul>
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </div>
+          </div>
+          <div class="popup" :aria-hidden="!popupVisible" @click.stop>
+            <div class="list scroll">
+              <dl v-for="group in tagGroups" :key="group.name">
+                <dt class="type">{{ group.name }}</dt>
+                <dd
+                  v-for="tag in group.list"
+                  :key="tag.id"
+                  :class="['tag', { active: store.category === tag.id }]"
+                  @click="handleCategory(tag.id)"
+                >
+                  {{ tag.name }}
+                </dd>
+              </dl>
+            </div>
           </div>
         </div>
         <div class="tabs">
@@ -149,16 +154,40 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useDriversStore } from '@/stores/drivers'
-import { categories, sorts } from '@/data/drivers'
+import { sorts } from '@/data/drivers'
 import type { DriverCategory } from '@/data/drivers'
 
 const store = useDriversStore()
 const popupVisible = ref(false)
 const listRef = ref<HTMLElement | null>(null)
 
-const currentCategory = computed(
-  () => categories.find(cat => cat.id === store.category)?.name ?? 'All',
-)
+const tagGroups: Array<{ name: string; list: Array<{ id: DriverCategory | 'all'; name: string }> }> = [
+  {
+    name: 'Type',
+    list: [
+      { id: 'all', name: 'All' },
+      { id: 'adb', name: 'ADB' },
+      { id: 'fastboot', name: 'Fastboot' },
+      { id: 'usb', name: 'USB' },
+    ],
+  },
+  {
+    name: 'Chipset',
+    list: [
+      { id: 'mediatek', name: 'MediaTek' },
+      { id: 'unisoc', name: 'Unisoc' },
+      { id: 'qualcomm', name: 'Qualcomm' },
+    ],
+  },
+]
+
+const currentCategory = computed(() => {
+  for (const group of tagGroups) {
+    const tag = group.list.find(tag => tag.id === store.category)
+    if (tag) return tag.name
+  }
+  return 'All'
+})
 
 const handleCategory = (id: DriverCategory | 'all') => {
   store.setCategory(id)
@@ -174,7 +203,7 @@ const refresh = () => {
 
 const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement
-  if (popupVisible.value && !target.closest('.select')) popupVisible.value = false
+  if (popupVisible.value && !target.closest('.tagList')) popupVisible.value = false
 }
 
 onMounted(() => {
@@ -212,80 +241,122 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 
-.select {
+.tagList {
   position: relative;
   font-size: 12px;
   color: var(--color-font);
 }
 
-.select-label {
+.tagList.active .label .icon svg {
+  transform: rotate(180deg);
+}
+
+.label {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 8px 12px;
+  padding: 8px 15px;
   border-radius: 3px;
   cursor: pointer;
-  transition: color 0.3s ease, background-color 0.3s ease;
+  transition: color 0.4s ease, background-color 0.4s ease;
 }
 
-.select-label:hover {
-  color: var(--color-primary-font-hover);
-  background-color: var(--color-button-background-hover);
+.label span {
+  flex: auto;
 }
 
-.select-label svg {
+.label .icon {
+  flex: none;
+  margin-left: 7px;
+  line-height: 0;
+}
+
+.label .icon svg {
   width: 0.9em;
   transition: transform 0.2s ease;
 }
 
-.select.active .select-label svg {
-  transform: rotate(180deg);
+.label:hover {
+  color: var(--color-primary-font-hover);
+  background-color: var(--color-button-background-hover);
+}
+
+.label:active {
+  color: var(--color-primary-font-active);
+  background-color: var(--color-button-background-active);
 }
 
 .popup {
   position: absolute;
   top: 100%;
-  left: 0;
-  margin-top: 8px;
-  min-width: 140px;
+  left: 8px;
+  margin-top: 12px;
   border-radius: 4px;
   background-color: var(--color-content-background);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
   opacity: 0;
   transform: scale(0.95, 0.8);
   transform-origin: 0 0;
+  max-height: 250px;
+  z-index: 10;
   pointer-events: none;
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.15));
+  display: flex;
   transition: 0.25s ease;
   transition-property: transform, opacity;
-  z-index: 10;
 }
 
-.select.active .popup {
+.popup::before {
+  content: ' ';
+  position: absolute;
+  top: -6px;
+  left: 20px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 8px solid var(--color-content-background);
+}
+
+.tagList.active .popup {
   opacity: 1;
   transform: scale(1);
   pointer-events: initial;
 }
 
-.popup ul {
+.popup .list {
+  padding: 10px;
+  box-sizing: border-box;
   max-height: 250px;
-  padding: 6px;
+  overflow-y: auto;
 }
 
-.popup li {
-  padding: 8px 12px;
-  border-radius: 3px;
-  font-size: 12px;
+.type {
+  padding-top: 10px;
+  padding-bottom: 3px;
+  color: var(--color-font-label);
+}
+
+.tag {
+  display: inline-block;
+  margin: 5px;
+  padding: 8px 10px;
+  border-radius: 5px;
+  background-color: var(--color-button-background);
   cursor: pointer;
-  transition: background-color 0.3s ease;
+  transition: background-color 0.4s ease;
 }
 
-.popup li:hover {
+.tag:hover {
   background-color: var(--color-button-background-hover);
 }
 
-.popup li.active {
+.tag:active {
+  background-color: var(--color-button-background-active);
+}
+
+.tag.active {
   color: var(--color-primary);
-  background-color: var(--color-button-background);
+  background-color: var(--color-button-background-active);
 }
 
 .tabs {

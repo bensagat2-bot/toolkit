@@ -174,7 +174,7 @@ li::before {
   top: 0;
   width: 3px;
   height: 100%;
-  background-color: var(--color-primary-dark-100-alpha-200);
+  background-color: var(--color-primary-dark-200-alpha-700);
   border-radius: 4px;
   transform: translateX(-100%);
   transition: transform 0.3s ease;
@@ -187,16 +187,20 @@ li::before {
 
 .link:hover:not(.active) {
   opacity: 0.8;
-  background-color: var(--color-primary-light-100-alpha-600);
+  background-color: var(--color-primary-light-400-alpha-700);
 }
 
 .link:active:not(.active) {
   opacity: 0.6;
-  background-color: var(--color-primary-light-400-alpha-700);
+  background-color: var(--color-primary-light-300-alpha-600);
 }
 
 .link.active {
-  background-color: var(--color-primary-light-100-alpha-600);
+  background-color: var(--color-primary-light-300-alpha-700);
+}
+
+.link.active:hover {
+  background-color: var(--color-primary-light-300-alpha-800);
 }
 
 .link.active::before {

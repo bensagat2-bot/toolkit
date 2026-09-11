@@ -1,6 +1,8 @@
 <template>
   <div class="aside">
-    <div class="logo">V1</div>
+    <div class="logo">
+      <img src="@/assets/images/vxper.png" alt="V1Per" class="logo-img" />
+    </div>
     <NavBar />
   </div>
 </template>
@@ -19,13 +21,20 @@ import NavBar from './NavBar.vue'
 
 .logo {
   box-sizing: border-box;
-  padding: 0 13%;
+  padding: 8px 13%;
   height: 50px;
   color: var(--color-nav-font);
   opacity: 0.8;
   flex: none;
-  text-align: center;
-  line-height: 50px;
-  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-img {
+  width: 100%;
+  height: auto;
+  max-height: 34px;
+  object-fit: contain;
 }
 </style>

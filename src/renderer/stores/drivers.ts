@@ -28,6 +28,7 @@ export const useDriversStore = defineStore('drivers', () => {
   const pageList = computed(() =>
     filtered.value.slice((page.value - 1) * pageSize, page.value * pageSize),
   )
+  const allNames = driverList.map(item => item.name)
 
   watch([query, category, sort], () => {
     page.value = 1
@@ -58,6 +59,7 @@ export const useDriversStore = defineStore('drivers', () => {
     total,
     maxPage,
     pageList,
+    allNames,
     setQuery,
     setCategory,
     setSort,

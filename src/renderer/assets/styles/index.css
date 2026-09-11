@@ -18,6 +18,8 @@ body {
   position: relative;
   height: 100%;
   overflow: hidden;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
 }
 
 :root {
@@ -39,13 +41,20 @@ body {
   --color-primary-light-200: rgb(141, 204, 171);
   --color-primary-light-300: rgb(164, 214, 188);
   --color-primary-light-300-alpha-600: rgba(164, 214, 188, 0.4);
+  --color-primary-light-300-alpha-700: rgba(164, 214, 188, 0.3);
   --color-primary-light-300-alpha-800: rgba(164, 214, 188, 0.2);
   --color-primary-light-400: rgb(182, 222, 201);
   --color-primary-light-400-alpha-600: rgba(182, 222, 201, 0.4);
   --color-primary-light-400-alpha-700: rgba(182, 222, 201, 0.3);
+  --color-primary-light-400-alpha-800: rgba(182, 222, 201, 0.2);
   --color-primary-light-500: rgb(197, 229, 212);
   --color-primary-light-600: rgb(209, 234, 221);
+  --color-primary-light-600-alpha-100: rgba(209, 234, 221, 0.9);
+  --color-primary-light-900: rgb(231, 244, 237);
+  --color-primary-light-900-alpha-200: rgba(231, 244, 237, 0.8);
   --color-primary-light-1000: rgb(255, 255, 255);
+  --color-primary-dark-200: rgb(62, 142, 101);
+  --color-primary-dark-200-alpha-700: rgba(62, 142, 101, 0.3);
 
   --color-app-background: var(--color-primary-light-100-alpha-600);
   --color-main-background: rgba(255, 255, 255, 0.92);
