@@ -1,21 +1,25 @@
 {
-  // https://github.com/tsconfig/bases#recommended-tsconfigjson
-  "extends": "@tsconfig/recommended/tsconfig.json",
   "compilerOptions": {
-    "target": "ESNext",
-    "allowJs": true,
+    "target": "ES2020",
+    "useDefineForClassFields": true,
     "module": "ESNext",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
     "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
-    "rootDir": "./",
-    "outDir": "./dist",
-    // "paths": {                                           /* Specify a set of entries that re-map imports to additional lookup locations. */
-    //   "@common/*": ["common/*"],
-    //   "@renderer/*": ["renderer/*"],
-    //   "@main/*": ["main/*"],
-    //   // "@lyric/*": ["renderer-lyric/*"],
-    //   "@static/*": ["static/*"],
-    //   "@root/*": ["./*"],
-    // },
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "preserve",
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@/*": ["./src/renderer/*"],
+      "@renderer/*": ["./src/renderer/*"]
+    }
   },
+  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.vue"],
+  "references": [{ "path": "./tsconfig.node.json" }]
 }
