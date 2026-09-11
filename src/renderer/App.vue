@@ -25,9 +25,9 @@
     <div id="main">
       <Toolbar />
       <div class="main-content">
-        <router-view v-slot="{ Component }">
+        <router-view v-slot="slotProps">
           <transition name="page-fade" mode="out-in">
-            <component :is="Component" class="view-container" />
+            <component :is="slotProps.Component" class="view-container" />
           </transition>
         </router-view>
       </div>
@@ -80,7 +80,7 @@ const menus = computed(() => {
 })
 
 onMounted(() => {
-  document.getElementById('root').style.display = 'block'
+  document.getElementById('root')?.style.setProperty('display', 'block')
 })
 </script>
 
