@@ -16,7 +16,7 @@ const onDomSizeChanged = (dom: HTMLElement, onChanged: (width: number, height: n
   }
 }
 
-export const useIconSize = (parentDom: Ref<HTMLElement | undefined>, size: number) => {
+export const useIconSize = (parentDom: Ref<HTMLElement | null>, size: number) => {
   const iconSize = ref('32px')
   let unsub: (() => void) | null = null
 

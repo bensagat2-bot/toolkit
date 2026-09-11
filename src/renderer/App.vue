@@ -25,9 +25,9 @@
     <div id="main">
       <Toolbar />
       <div class="main-content">
-        <router-view v-slot="(slotProps: any)">
+        <router-view v-slot="{ Component }">
           <transition name="page-fade" mode="out-in">
-            <component :is="slotProps.Component" class="view-container" />
+            <component :is="Component" class="view-container" />
           </transition>
         </router-view>
       </div>
@@ -35,12 +35,12 @@
   </div>
 </template>
 
-<script setup lang="ts">
+<script setup>
 import { ref, computed, onMounted, h } from 'vue'
 import Toolbar from './components/layout/Toolbar.vue'
 import { useIconSize } from './utils/useIconSize'
 
-const dom_menu = ref<HTMLElement>()
+const dom_menu = ref(null)
 const iconSize = useIconSize(dom_menu, 0.32)
 
 const menus = computed(() => {
