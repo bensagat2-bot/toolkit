@@ -46,7 +46,7 @@ import PlayBar from '@/components/layout/PlayBar.vue'
   border-top-left-radius: 4px;
   border-bottom-left-radius: 4px;
   overflow: hidden;
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.1);
+  box-shadow: -1px 0 0 rgba(255, 255, 255, 0.07);
 }
 
 #toolbar,
