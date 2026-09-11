@@ -14,6 +14,12 @@ body {
   user-select: none;
 }
 
+#root {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+
 :root {
   --color-primary: rgb(77, 175, 124);
   --color-primary-alpha-100: rgba(77, 175, 124, 0.9);
