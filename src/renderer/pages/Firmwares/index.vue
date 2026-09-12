@@ -187,7 +187,7 @@ const canExtract = computed(() => {
 })
 
 // Builds the full FRBox URL with the password embedded, handling bare paths.
-function frboxUrl(link: string, pwd?: string): string {
+function frboxUrl(link, pwd) {
   if (!link) return ''
   let u = link.trim()
   if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(u)) u = 'https://' + u
