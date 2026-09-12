@@ -373,6 +373,13 @@ pub async fn utils_force_fastboot(app: tauri::AppHandle) -> Result<bool, String>
         .map_err(|e| format!("Force fastboot task failed: {e}"))?
 }
 
+#[command]
+pub async fn utils_scrcpy(app: tauri::AppHandle) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::utils::launch_scrcpy(app))
+        .await
+        .map_err(|e| format!("Scrcpy task failed: {e}"))?
+}
+
 // ── Xiaomi Commands ──────────────────────────────────────────
 
 #[command]

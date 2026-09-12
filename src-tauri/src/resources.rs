@@ -5,6 +5,7 @@ use zip::ZipArchive;
 
 const PLATFORM_TOOLS_ZIP: &[u8] = include_bytes!("../embed/platform-tools.zip");
 const UNISOC_ZIP: &[u8] = include_bytes!("../embed/unisoc.zip");
+const SCRCPY_ZIP: &[u8] = include_bytes!("../embed/scrcpy.zip");
 
 fn cache_dir() -> PathBuf {
     dirs::data_local_dir()
@@ -43,5 +44,6 @@ pub fn extract_all() -> Result<PathBuf, String> {
     fs::create_dir_all(&root).map_err(|e| format!("Failed to create cache dir: {e}"))?;
     extract_zip(PLATFORM_TOOLS_ZIP, &root.join("platform-tools"))?;
     extract_zip(UNISOC_ZIP, &root.join("Unisoc"))?;
+    extract_zip(SCRCPY_ZIP, &root.join("scrcpy"))?;
     Ok(root)
 }

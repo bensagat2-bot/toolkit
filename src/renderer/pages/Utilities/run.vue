@@ -41,6 +41,7 @@ const jobLabel = computed(() => {
     root: 'Root',
     anykernel: 'AnyKernel',
     force_fastboot: 'Force Fastboot',
+    scrcpy: 'Scrcpy',
   }
   return labels[pending.value.type] || ''
 })
@@ -88,6 +89,8 @@ async function runJob() {
       await sendIpcToMain('utils_anykernel', { opts: { zip: job.zip } })
     } else if (job.type === 'force_fastboot') {
       await sendIpcToMain('utils_force_fastboot', {})
+    } else if (job.type === 'scrcpy') {
+      await sendIpcToMain('utils_scrcpy', {})
     }
     queueLog('Done.', 'success')
   } catch (e) {

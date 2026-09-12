@@ -70,6 +70,7 @@ pub fn run() {
             commands::utils_root,
             commands::utils_anykernel,
             commands::utils_force_fastboot,
+            commands::utils_scrcpy,
             commands::xiaomi_detect_device,
             commands::xiaomi_get_product,
             commands::xiaomi_get_token,

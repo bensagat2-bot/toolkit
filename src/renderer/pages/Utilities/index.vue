@@ -46,6 +46,17 @@
           </button>
         </div>
       </div>
+
+      <div class="op-card">
+        <div class="op-icon">S</div>
+        <div class="op-body">
+          <h3>Scrcpy</h3>
+          <p>Mirror and control the connected Android device over USB or Wi-Fi.</p>
+          <button class="btn btn-primary op-run" @click="runScrcpy">
+            Launch Scrcpy
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -82,6 +93,11 @@ function runAnyKernel() {
 
 function runForceFastboot() {
   setPending({ type: 'force_fastboot' })
+  router.push({ path: '/utilities/run' })
+}
+
+function runScrcpy() {
+  setPending({ type: 'scrcpy' })
   router.push({ path: '/utilities/run' })
 }
 </script>

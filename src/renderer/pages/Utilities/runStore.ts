@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-export type UtilsJobType = 'root' | 'anykernel' | 'force_fastboot'
+export type UtilsJobType = 'root' | 'anykernel' | 'force_fastboot' | 'scrcpy'
 
 export interface UtilsJob {
   type: UtilsJobType

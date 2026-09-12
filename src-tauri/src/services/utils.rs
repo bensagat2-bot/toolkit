@@ -463,10 +463,10 @@ pub fn anykernel(app: AppHandle, opts: AnyKernelOptions) -> Result<bool, String>
         }
         emit(&app, "Flash complete, rebooting device...");
         adb(&["reboot"], 10000);
-        let elapsed = started.elapsed().as_secs();
-        emit(&app, format!("Elapsed Time: {}s", elapsed).as_str());
-        return Ok(true);
-    }
+let elapsed = started.elapsed().as_secs();
+    emit(&app, format!("Elapsed Time: {}s", elapsed).as_str());
+    Ok(true)
+}
 
     emit(&app, if root { "No update-binary; falling back to fastboot." } else { "No root detected; falling back to fastboot." });
 
@@ -527,6 +527,65 @@ pub fn anykernel(app: AppHandle, opts: AnyKernelOptions) -> Result<bool, String>
     let elapsed = started.elapsed().as_secs();
     emit(&app, format!("Elapsed Time: {}s", elapsed).as_str());
     Ok(true)
+}
+
+// ── Scrcpy ──────────────────────────────────────────────────
+
+pub fn scrcpy_path() -> PathBuf {
+    RESOURCE_DIR.get()
+        .map(|d| d.join("scrcpy"))
+        .unwrap_or_else(|| {
+            let exe = std::env::current_exe().unwrap_or_default();
+            exe.parent().unwrap_or(Path::new(".")).join("scrcpy")
+        })
+}
+
+fn scrcpy_running() -> bool {
+    let out = run_stdout(base_cmd("tasklist").args(["/FI", "IMAGENAME eq scrcpy.exe"]), 5000);
+    out.to_lowercase().contains("scrcpy.exe")
+}
+
+/// Launches the embedded scrcpy mirroring session via scrcpy-noconsole.vbs.
+pub fn launch_scrcpy(app: AppHandle) -> Result<bool, String> {
+    let dir = scrcpy_path();
+    let vbs = dir.join("scrcpy-noconsole.vbs");
+    if !vbs.exists() {
+        return Err("scrcpy files not found. Reinstall the toolkit to restore embedded files.".into());
+    }
+
+    emit(&app, "Checking ADB connection...");
+    let serial = ready_adb_device().ok_or("No ready ADB device. Accept USB debugging and reconnect.")?;
+    emit(&app, "Checking ADB connection... FOUND");
+    emit(&app, format!("Device: {}", serial).as_str());
+
+    if scrcpy_running() {
+        emit(&app, "scrcpy is already running.");
+        emit(&app, "OK");
+        return Ok(true);
+    }
+
+    emit(&app, "Running scrcpy-noconsole.vbs please wait....");
+    let mut cmd = base_cmd("wscript.exe");
+    cmd.current_dir(&dir).arg("scrcpy-noconsole.vbs");
+    let child = cmd.spawn().map_err(|e| format!("Failed to launch scrcpy: {e}"))?;
+    drop(child);
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let mut launched = false;
+    while std::time::Instant::now() < deadline {
+        if scrcpy_running() {
+            launched = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+
+    if launched {
+        emit(&app, "OK");
+        Ok(true)
+    } else {
+        Err("scrcpy failed to start. Make sure the phone screen is unlocked and USB debugging is on.".into())
+    }
 }
 
 // ── Force Fastboot ───────────────────────────────────────────

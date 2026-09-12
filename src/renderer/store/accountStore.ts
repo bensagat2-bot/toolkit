@@ -14,6 +14,18 @@ export interface AccountInfo {
   token?: string
 }
 
+interface UserPayload {
+  id?: number
+  username: string
+  email?: string | null
+  hwid: string
+  credits?: number
+  status?: string
+  location?: string | null
+  device_model?: string | null
+  session_token?: string | null
+}
+
 const STORAGE_KEY = 'v1per_account'
 const API_BASE = 'https://firmwaresss-devices.vercel.app'
 
@@ -80,7 +92,7 @@ export const useAccountStore = defineStore('account', () => {
     })
     const data = await parseJson(res)
     if (!res.ok) throw apiError(data, 'Registration failed')
-    const user = data?.user as Record<string, unknown> | undefined
+    const user = data?.user as UserPayload | undefined
     if (!user) throw new Error('Unexpected server response')
     account.value = {
       id: user.id,
@@ -91,7 +103,7 @@ export const useAccountStore = defineStore('account', () => {
       status: user.status || 'active',
       location: user.location || '',
       device_model: user.device_model || '',
-      token: user.session_token,
+      token: user.session_token ?? undefined,
     }
     persist()
     isAuthed.value = true
@@ -107,7 +119,7 @@ export const useAccountStore = defineStore('account', () => {
     })
     const data = await parseJson(res)
     if (!res.ok) throw apiError(data, 'Login failed')
-    const user = data?.user as Record<string, unknown> | undefined
+    const user = data?.user as UserPayload | undefined
     if (!user) throw new Error('Unexpected server response')
     account.value = {
       id: user.id,
@@ -118,7 +130,7 @@ export const useAccountStore = defineStore('account', () => {
       status: user.status || 'active',
       location: user.location || '',
       device_model: user.device_model || '',
-      token: user.session_token,
+      token: user.session_token ?? undefined,
     }
     persist()
     isAuthed.value = true
