@@ -155,20 +155,47 @@ fn download_file(app: &AppHandle, url: &str, filename: &str) -> Result<PathBuf, 
     Ok(dest)
 }
 
-fn ready_adb_device() -> Option<String> {
-    for _ in 0..20 {
+fn ready_adb_device() -> Result<String, String> {
+    let start = std::time::Instant::now();
+    let mut last_state = String::new();
+    loop {
         let out = adb(&["devices"], 8000);
+        let mut seen_device = false;
         for line in out.lines().skip(1) {
             let mut parts = line.split_whitespace();
-            let serial = parts.next();
-            let state = parts.next().unwrap_or("");
-            if state == "device" {
-                return serial.map(|s| s.to_string());
+            let serial = parts.next().map(|s| s.to_string());
+            let state = parts.next().unwrap_or("").to_string();
+            match state.as_str() {
+                "device" => {
+                    if let Some(s) = serial {
+                        return Ok(s);
+                    }
+                    seen_device = true;
+                }
+                "unauthorized" => last_state = "unauthorized".to_string(),
+                "offline" => last_state = "offline".to_string(),
+                s if !s.is_empty() => {
+                    last_state = format!("unknown state ({s})");
+                }
+                _ => {}
             }
+        }
+        if seen_device && last_state.is_empty() {
+            last_state = "no ready device".to_string();
+        }
+        if start.elapsed().as_secs() >= 20 {
+            break;
         }
         std::thread::sleep(std::time::Duration::from_millis(1000));
     }
-    None
+    match last_state.as_str() {
+        "unauthorized" => {
+            Err("USB debugging is not authorized. Unlock your phone and tap 'Allow' on the RSA debugging prompt.".into())
+        }
+        "offline" => Err("Device is offline. Reconnect the USB cable and try again.".into()),
+        s if !s.is_empty() => Err(format!("No ready ADB device ({s}). Enable USB debugging and connect.")),
+        _ => Err("No ADB device detected. Enable USB debugging, connect via USB, and retry.".into()),
+    }
 }
 
 fn device_prop(serial: &str, prop: &str) -> String {
@@ -231,7 +258,7 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     }
 
     emit(&app, "Checking ADB Connection...");
-    let serial = ready_adb_device().ok_or("No ready ADB device. Accept USB debugging and reconnect.")?;
+    let serial = ready_adb_device()?;
     emit(&app, "Checking ADB Connection... FOUND");
 
     let model = device_prop(&serial, "ro.product.model");
@@ -556,7 +583,7 @@ pub fn launch_scrcpy(app: AppHandle) -> Result<bool, String> {
     }
 
     emit(&app, "Checking ADB connection...");
-    let serial = ready_adb_device().ok_or("No ready ADB device. Accept USB debugging and reconnect.")?;
+    let serial = ready_adb_device()?;
     emit(&app, "Checking ADB connection... FOUND");
     emit(&app, format!("Device: {}", serial).as_str());
 

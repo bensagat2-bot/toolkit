@@ -156,7 +156,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useAccountStore } from '@renderer/store/accountStore'
 import ExtractDialog from './ExtractDialog.vue'
 
@@ -185,6 +185,20 @@ const canExtract = computed(() => {
   const link = revealedLink.value
   return !!link && (link.includes('ota_full') || link.includes('ota-') || link.includes('images_') || link.endsWith('.tgz'))
 })
+
+// Builds the full FRBox URL with the password embedded, handling bare paths.
+function frboxUrl(link: string, pwd?: string): string {
+  if (!link) return ''
+  let u = link.trim()
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(u)) u = 'https://' + u
+  try {
+    const url = new URL(u)
+    if (pwd && url.searchParams.get('pwd') !== pwd) url.searchParams.set('pwd', pwd)
+    return url.toString()
+  } catch {
+    return u
+  }
+}
 
 function openExtract() {
   showExtract.value = true
@@ -260,16 +274,25 @@ async function confirmDownload() {
 
 function copyLink() {
   if (!revealedLink.value) return
-  let text = revealedLink.value
-  if (revealedCode.value) text += `\nPassword: ${revealedCode.value}`
+  const text = frboxUrl(revealedLink.value, revealedCode.value || undefined)
   navigator.clipboard.writeText(text)
   copied.value = true
   setTimeout(() => { copied.value = false }, 2000)
 }
 
+let refreshTimer = null
+
 onMounted(() => {
   credits.value = store.account?.credits ?? 0
   fetchFirmwares()
+  refreshTimer = setInterval(() => {
+    credits.value = store.account?.credits ?? 0
+    fetchFirmwares()
+  }, 30000)
+})
+
+onBeforeUnmount(() => {
+  if (refreshTimer) clearInterval(refreshTimer)
 })
 </script>
 

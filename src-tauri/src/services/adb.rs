@@ -21,12 +21,16 @@ fn fastboot_path() -> String {
 }
 
 pub async fn run_adb(args: &[&str]) -> String {
-    let output = base_command(&adb_path())
+    let path = adb_path();
+    if !std::path::Path::new(&path).exists() {
+        return "adb: embedded platform-tools missing (reinstall the toolkit)".into();
+    }
+    let output = base_command(&path)
         .args(args)
         .output()
         .unwrap_or_else(|_| std::process::Output {
             stdout: vec![],
-            stderr: format!("adb: command not found").into_bytes(),
+            stderr: format!("adb: failed to launch").into_bytes(),
             status: std::process::ExitStatus::default(),
         });
     String::from_utf8_lossy(&output.stdout).to_string()
@@ -53,12 +57,16 @@ pub async fn detect() -> (String, Option<String>) {
 }
 
 pub async fn run_fastboot(args: &[&str]) -> String {
-    let output = base_command(&fastboot_path())
+    let path = fastboot_path();
+    if !std::path::Path::new(&path).exists() {
+        return "fastboot: embedded platform-tools missing (reinstall the toolkit)".into();
+    }
+    let output = base_command(&path)
         .args(args)
         .output()
         .unwrap_or_else(|_| std::process::Output {
             stdout: vec![],
-            stderr: format!("fastboot: command not found").into_bytes(),
+            stderr: format!("fastboot: failed to launch").into_bytes(),
             status: std::process::ExitStatus::default(),
         });
     String::from_utf8_lossy(&output.stdout).to_string()

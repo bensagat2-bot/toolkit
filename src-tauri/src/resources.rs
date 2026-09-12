@@ -15,8 +15,13 @@ fn cache_dir() -> PathBuf {
 }
 
 fn extract_zip(data: &[u8], dest: &Path) -> Result<(), String> {
-    if dest.exists() {
+    // Use a marker file so a partial/stale dir triggers a clean re-extract.
+    let done_marker = dest.join(".complete");
+    if done_marker.exists() {
         return Ok(());
+    }
+    if dest.exists() {
+        fs::remove_dir_all(dest).map_err(|e| format!("Failed to clear stale cache: {e}"))?;
     }
     fs::create_dir_all(dest).map_err(|e| format!("Failed to create dir: {e}"))?;
     let cursor = std::io::Cursor::new(data);
@@ -36,6 +41,7 @@ fn extract_zip(data: &[u8], dest: &Path) -> Result<(), String> {
             std::io::Write::write_all(&mut out, &buf).map_err(|e| format!("Failed to write file: {e}"))?;
         }
     }
+    fs::write(&done_marker, "ok").map_err(|e| format!("Failed to write marker: {e}"))?;
     Ok(())
 }
 
