@@ -38,6 +38,11 @@ const router = createRouter({
       component: () => import('@/pages/Xiaomi/run.vue'),
     },
     {
+      path: '/firmwares',
+      name: 'Firmwares',
+      component: () => import('@/pages/Firmwares/index.vue'),
+    },
+    {
       path: '/utilities',
       name: 'Utilities',
       component: () => import('@/pages/Utilities/index.vue'),
