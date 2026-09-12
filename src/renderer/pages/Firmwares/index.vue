@@ -106,10 +106,14 @@
             </div>
           </div>
 
-          <div class="modal-link-section" v-if="linkRevealed && selectedItem.has_link">
+          <transition name="fade">
+            <div class="error-msg" v-if="showError">{{ errorMsg }}</div>
+          </transition>
+
+          <div class="modal-link-section" v-if="linkRevealed && revealedLink">
             <div class="link-available">
-              <div class="link-note" v-if="selectedItem.extraction_code">
-                Password: <strong>{{ selectedItem.extraction_code }}</strong>
+              <div class="link-note" v-if="revealedCode">
+                Password: <strong>{{ revealedCode }}</strong>
               </div>
               <button class="btn btn-primary" @click="copyLink">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -147,6 +151,10 @@ const copied = ref(false)
 const confirmingPurchase = ref(false)
 const linkRevealed = ref(false)
 const processingOrder = ref(false)
+const revealedLink = ref('')
+const revealedCode = ref('')
+const errorMsg = ref('')
+const showError = ref(false)
 
 let searchTimer = null
 
@@ -185,37 +193,46 @@ function openDetail(item) {
   linkRevealed.value = false
   processingOrder.value = false
   copied.value = false
+  revealedLink.value = ''
+  revealedCode.value = ''
+  errorMsg.value = ''
+  showError.value = false
 }
 
 function startPurchase() {
   confirmingPurchase.value = true
 }
 
-function confirmDownload() {
+async function confirmDownload() {
   confirmingPurchase.value = false
   processingOrder.value = true
-  setTimeout(() => {
+  try {
+    const result = await store.purchase(source.value, selectedItem.value.id)
+    revealedLink.value = result.link
+    revealedCode.value = result.extraction_code || ''
+    credits.value = store.account?.credits ?? 0
+    setTimeout(() => {
+      processingOrder.value = false
+      linkRevealed.value = true
+    }, 800)
+  } catch (e) {
     processingOrder.value = false
-    linkRevealed.value = true
-    const newCredits = Math.max(0, credits.value - 5)
-    credits.value = newCredits
-    store.updateCredits(newCredits)
-  }, 1800)
+    selectedItem.value = null
+    errorMsg.value = e?.message || 'Purchase failed. Please try again.'
+    showError.value = true
+  }
 }
 
 function copyLink() {
-  const item = selectedItem.value
-  const link = item?.link || item?.network_disk_link
-  if (!link) return
-  let text = link
-  if (item.extraction_code) text += `\nPassword: ${item.extraction_code}`
+  if (!revealedLink.value) return
+  let text = revealedLink.value
+  if (revealedCode.value) text += `\nPassword: ${revealedCode.value}`
   navigator.clipboard.writeText(text)
   copied.value = true
   setTimeout(() => { copied.value = false }, 2000)
 }
 
-onMounted(async () => {
-  await store.refreshCredits()
+onMounted(() => {
   credits.value = store.account?.credits ?? 0
   fetchFirmwares()
 })
@@ -316,4 +333,7 @@ onMounted(async () => {
 .modal-enter-active .fw-modal, .modal-leave-active .fw-modal { transition: transform 0.25s ease; }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
 .modal-enter-from .fw-modal, .modal-leave-to .fw-modal { transform: scale(0.94); }
+.fade-enter-active, .fade-leave-active { transition: opacity 0.25s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+.error-msg { font-size: 12px; color: #f44336; text-align: center; padding: 8px; }
 </style>

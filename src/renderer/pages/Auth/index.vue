@@ -2,19 +2,21 @@
   <div class="auth-page">
     <transition name="auth">
       <div class="auth-wrap" v-if="!loading">
-        <h2 class="auth-title">Create Your Account</h2>
-        <p class="auth-sub">Join V1Per Toolkit and start servicing devices.</p>
+        <h2 class="auth-title">{{ isLogin ? 'Welcome Back' : 'Create Your Account' }}</h2>
+        <p class="auth-sub">{{ isLogin ? 'Sign in to continue using V1Per Toolkit.' : 'Join V1Per Toolkit and start servicing devices.' }}</p>
 
         <form class="auth-form" @submit.prevent="submit">
-          <div class="field" v-for="(f, i) in fields" :key="f.key" :style="{ '--i': i }">
-            <input
-              v-model="f.value"
-              :type="f.type"
-              class="text-input"
-              :placeholder="f.placeholder"
-              :required="f.required"
-              :autocomplete="f.autocomplete"
-            />
+          <div class="field" :style="{ '--i': 0 }">
+            <input v-model="username" class="text-input" placeholder="Username" required autocomplete="username" />
+          </div>
+          <div class="field" v-if="!isLogin" :style="{ '--i': 1 }">
+            <input v-model="email" type="email" class="text-input" placeholder="Email (optional)" autocomplete="email" />
+          </div>
+          <div class="field" :style="{ '--i': 2 }">
+            <input v-model="password" type="password" class="text-input" placeholder="Password" required autocomplete="current-password" />
+          </div>
+          <div class="field" v-if="!isLogin" :style="{ '--i': 3 }">
+            <input v-model="confirm" type="password" class="text-input" placeholder="Confirm Password" required autocomplete="new-password" />
           </div>
 
           <transition name="fade">
@@ -22,18 +24,22 @@
           </transition>
 
           <button class="btn btn-primary" type="submit">
-            Create Account
+            {{ isLogin ? 'Sign In' : 'Create Account' }}
           </button>
         </form>
 
-        <p class="auth-foot">By creating an account you agree to the toolkit terms.</p>
+        <button class="link-btn" @click="toggleMode">
+          {{ isLogin ? 'New here? Create an account' : 'Already have an account? Sign in' }}
+        </button>
+
+        <p class="auth-foot">Your account is linked to this device.</p>
       </div>
     </transition>
 
     <transition name="auth">
       <div class="loading-wrap" v-if="loading">
         <div class="loading-ring"></div>
-        <p class="loading-text">Creating your account...</p>
+        <p class="loading-text">{{ isLogin ? 'Signing you in...' : 'Creating your account...' }}</p>
         <p class="loading-sub">Please wait a moment</p>
       </div>
     </transition>
@@ -41,39 +47,61 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useAccountStore } from '@renderer/store/accountStore'
+import { sendIpcToMain } from '@renderer/utils/ipc'
 
+const API_BASE = 'https://firmwaresss-devices.vercel.app'
 const store = useAccountStore()
 const loading = ref(false)
 const error = ref('')
+const isLogin = ref(false)
+const username = ref('')
+const email = ref('')
+const password = ref('')
+const confirm = ref('')
 
-const fields = reactive([
-  { key: 'username', value: '', type: 'text', placeholder: 'Username', required: true, autocomplete: 'username' },
-  { key: 'email', value: '', type: 'email', placeholder: 'Email (optional)', required: false, autocomplete: 'email' },
-  { key: 'password', value: '', type: 'password', placeholder: 'Password', required: true, autocomplete: 'new-password' },
-  { key: 'confirm', value: '', type: 'password', placeholder: 'Confirm Password', required: true, autocomplete: 'new-password' },
-])
+onMounted(async () => {
+  try {
+    const hwid = await sendIpcToMain<string>('get_hwid')
+    const res = await fetch(`${API_BASE}/api/auth/status?hwid=${encodeURIComponent(hwid)}`)
+    const data = await res.json()
+    if (data.registered) isLogin.value = true
+  } catch {
+    // offline: default to create mode
+  }
+})
+
+function toggleMode() {
+  isLogin.value = !isLogin.value
+  error.value = ''
+}
 
 async function submit() {
   error.value = ''
-  const username = fields[0].value.trim()
-  const email = fields[1].value.trim()
-  const password = fields[2].value
-  const confirm = fields[3].value
+  if (isLogin.value) {
+    loading.value = true
+    try {
+      await store.login(password.value)
+    } catch (e: any) {
+      error.value = e?.message || 'Sign in failed. Check your connection.'
+      loading.value = false
+    }
+    return
+  }
 
-  if (password.length < 6) {
+  if (password.value.length < 6) {
     error.value = 'Password must be at least 6 characters.'
     return
   }
-  if (password !== confirm) {
+  if (password.value !== confirm.value) {
     error.value = 'Passwords do not match.'
     return
   }
 
   loading.value = true
   try {
-    await store.register(username, email, password)
+    await store.register(username.value, email.value, password.value)
   } catch (e: any) {
     error.value = e?.message || 'Failed to create account. Check your connection.'
     loading.value = false
@@ -99,6 +127,8 @@ async function submit() {
 .btn { width: 100%; padding: 12px; font-size: 14px; font-weight: 600; border-radius: 8px; cursor: pointer; border: none; background: linear-gradient(135deg, var(--accent-primary), #60a5fa); color: #fff; transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease; }
 .btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(77,131,175,0.35); }
 .btn:active { transform: translateY(0); opacity: 0.9; }
+.link-btn { background: none; border: none; font-size: 12px; color: var(--accent-primary); cursor: pointer; padding: 4px; }
+.link-btn:hover { text-decoration: underline; }
 .error-msg { font-size: 12px; color: #f44336; }
 .auth-foot { font-size: 11px; color: var(--text-secondary); opacity: 0.8; margin: 6px 0 0; }
 

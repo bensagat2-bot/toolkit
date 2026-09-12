@@ -11,6 +11,7 @@ export interface AccountInfo {
   status: string
   location: string
   device_model: string
+  token?: string
 }
 
 const STORAGE_KEY = 'v1per_account'
@@ -23,14 +24,6 @@ function loadSaved(): AccountInfo | null {
   } catch {
     return null
   }
-}
-
-async function sha256(text: string): Promise<string> {
-  const data = new TextEncoder().encode(text)
-  const digest = await crypto.subtle.digest('SHA-256', data)
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
 }
 
 export const useAccountStore = defineStore('account', () => {
@@ -48,31 +41,9 @@ export const useAccountStore = defineStore('account', () => {
   }
 
   async function init() {
-    if (account.value) {
+    if (account.value?.token) {
       initialized.value = true
       return
-    }
-    try {
-      const hwid = await sendIpcToMain<string>('get_hwid')
-      const res = await fetch(`${API_BASE}/api/users?hwid=${encodeURIComponent(hwid)}`)
-      const data = await res.json()
-      const existing = (data.users || []).find((u: any) => u.hwid === hwid)
-      if (existing) {
-        account.value = {
-          id: existing.id,
-          username: existing.username,
-          email: existing.email || '',
-          hwid: existing.hwid,
-          credits: existing.credits || 0,
-          status: existing.status || 'active',
-          location: existing.location || '',
-          device_model: existing.device_model || '',
-        }
-        persist()
-        isAuthed.value = true
-      }
-    } catch {
-      // offline: stay unauthed, user can still browse free pages
     }
     initialized.value = true
   }
@@ -80,18 +51,14 @@ export const useAccountStore = defineStore('account', () => {
   async function register(username: string, email: string, password: string) {
     const hwid = await sendIpcToMain<string>('get_hwid')
     const deviceModel = await sendIpcToMain<string>('get_device_model')
-    const passwordHash = await sha256(password)
     const res = await fetch(`${API_BASE}/api/users`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username,
         email,
-        password_hash: passwordHash,
+        password,
         hwid,
-        credits: 0,
-        status: 'active',
-        location: '',
         device_model: deviceModel,
       }),
     })
@@ -107,6 +74,33 @@ export const useAccountStore = defineStore('account', () => {
       status: user.status || 'active',
       location: user.location || '',
       device_model: user.device_model || '',
+      token: user.session_token,
+    }
+    persist()
+    isAuthed.value = true
+    return account.value
+  }
+
+  async function login(password: string) {
+    const hwid = await sendIpcToMain<string>('get_hwid')
+    const res = await fetch(`${API_BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hwid, password }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Login failed')
+    const user = data.user
+    account.value = {
+      id: user.id,
+      username: user.username,
+      email: user.email || '',
+      hwid: user.hwid,
+      credits: user.credits || 0,
+      status: user.status || 'active',
+      location: user.location || '',
+      device_model: user.device_model || '',
+      token: user.session_token,
     }
     persist()
     isAuthed.value = true
@@ -119,44 +113,23 @@ export const useAccountStore = defineStore('account', () => {
     persist()
   }
 
-  function updateCredits(credits: number) {
-    if (!account.value) return
-    account.value.credits = credits
+  async function purchase(source: string, firmwareId: number): Promise<{ link: string; extraction_code?: string | null }> {
+    if (!account.value?.token) throw new Error('Not signed in')
+    const res = await fetch(`${API_BASE}/api/firmware/purchase`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source,
+        firmware_id: firmwareId,
+        token: account.value.token,
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Purchase failed')
+    account.value.credits = data.credits_left ?? account.value.credits
     persist()
-    syncCreditsToServer(credits)
+    return { link: data.link, extraction_code: data.extraction_code }
   }
 
-  async function syncCreditsToServer(credits: number) {
-    if (!account.value?.id) return
-    try {
-      await fetch(`${API_BASE}/api/users`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: account.value.id,
-          credits,
-          reason: 'Toolkit firmware download',
-        }),
-      })
-    } catch {
-      // offline: local count stays; server syncs later
-    }
-  }
-
-  async function refreshCredits() {
-    if (!account.value) return
-    try {
-      const res = await fetch(`${API_BASE}/api/users?hwid=${encodeURIComponent(account.value.hwid)}`)
-      const data = await res.json()
-      const fresh = (data.users || []).find((u: any) => u.hwid === account.value.hwid)
-      if (fresh && fresh.credits !== account.value.credits) {
-        account.value.credits = fresh.credits || 0
-        persist()
-      }
-    } catch {
-      // offline: ignore
-    }
-  }
-
-  return { account, isAuthed, initialized, init, register, logout, updateCredits, refreshCredits }
+  return { account, isAuthed, initialized, init, register, login, logout, purchase }
 })
