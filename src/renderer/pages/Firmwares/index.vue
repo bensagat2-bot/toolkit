@@ -18,7 +18,8 @@
 
     <div class="fw-list-wrap scroll">
       <div class="fw-grid" v-if="!loading && items.length">
-        <div class="fw-card" v-for="item in items" :key="item.id" @click="openDetail(item)">
+        <transition-group name="card">
+          <div class="fw-card" v-for="(item, i) in items" :key="item.id" :style="{ '--i': i }" @click="openDetail(item)">
           <div class="card-top">
             <span class="fw-name" :title="item.device_name || item.project || 'Unknown'">{{ item.device_name || item.project || 'Unknown' }}</span>
             <span :class="item.has_link ? 'status-ok' : 'status-no'">{{ item.has_link ? 'Available' : 'No link' }}</span>
@@ -31,7 +32,8 @@
             <span v-if="item.date">{{ item.date }}</span>
             <span v-if="item.region">{{ item.region }}</span>
           </div>
-        </div>
+          </div>
+        </transition-group>
       </div>
 
       <div class="fw-loading" v-else-if="loading">
@@ -53,8 +55,9 @@
     </div>
 
     <!-- Detail Modal -->
-    <div class="fw-overlay" v-if="selectedItem" @click.self="selectedItem = null">
-      <div class="fw-modal">
+    <transition name="modal">
+      <div class="fw-overlay" v-if="selectedItem" @click.self="selectedItem = null">
+        <div class="fw-modal">
         <div class="modal-header">
           <h3>{{ selectedItem.device_name || selectedItem.project }}</h3>
           <button class="modal-close" @click="selectedItem = null">&times;</button>
@@ -70,6 +73,7 @@
             <div class="info-row" v-if="selectedItem.region"><span>Region</span><span>{{ selectedItem.region }}</span></div>
             <div class="info-row" v-if="selectedItem.date"><span>Date</span><span>{{ selectedItem.date }}</span></div>
             <div class="info-row" v-if="selectedItem.platform"><span>Platform</span><span>{{ selectedItem.platform }}</span></div>
+            <div class="info-row" v-if="selectedItem.market_type"><span>Market</span><span>{{ selectedItem.market_type }}</span></div>
           </div>
 
           <div class="modal-link-section" v-if="!confirmingPurchase && !linkRevealed">
@@ -94,8 +98,19 @@
             </div>
           </div>
 
+          <div class="modal-link-section processing-section" v-if="processingOrder">
+            <div class="processing-ring"></div>
+            <div class="processing-msg">
+              <p>Please wait, processing your order...</p>
+              <p class="processing-sub">Preparing your download link</p>
+            </div>
+          </div>
+
           <div class="modal-link-section" v-if="linkRevealed && selectedItem.has_link">
             <div class="link-available">
+              <div class="link-note" v-if="selectedItem.extraction_code">
+                Password: <strong>{{ selectedItem.extraction_code }}</strong>
+              </div>
               <button class="btn btn-primary" @click="copyLink">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 {{ copied ? 'Copied!' : 'Copy Download Link' }}
@@ -108,7 +123,8 @@
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -130,6 +146,7 @@ const credits = ref(store.account?.credits ?? 0)
 const copied = ref(false)
 const confirmingPurchase = ref(false)
 const linkRevealed = ref(false)
+const processingOrder = ref(false)
 
 let searchTimer = null
 
@@ -166,6 +183,7 @@ function openDetail(item) {
   selectedItem.value = item
   confirmingPurchase.value = false
   linkRevealed.value = false
+  processingOrder.value = false
   copied.value = false
 }
 
@@ -175,16 +193,23 @@ function startPurchase() {
 
 function confirmDownload() {
   confirmingPurchase.value = false
-  linkRevealed.value = true
-  const newCredits = Math.max(0, credits.value - 5)
-  credits.value = newCredits
-  store.updateCredits(newCredits)
+  processingOrder.value = true
+  setTimeout(() => {
+    processingOrder.value = false
+    linkRevealed.value = true
+    const newCredits = Math.max(0, credits.value - 5)
+    credits.value = newCredits
+    store.updateCredits(newCredits)
+  }, 1800)
 }
 
 function copyLink() {
-  const link = selectedItem.value?.link || selectedItem.value?.network_disk_link
+  const item = selectedItem.value
+  const link = item?.link || item?.network_disk_link
   if (!link) return
-  navigator.clipboard.writeText(link)
+  let text = link
+  if (item.extraction_code) text += `\nPassword: ${item.extraction_code}`
+  navigator.clipboard.writeText(text)
   copied.value = true
   setTimeout(() => { copied.value = false }, 2000)
 }
@@ -228,7 +253,14 @@ onMounted(async () => {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
   cursor: pointer;
   transition: opacity 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  animation: cardIn 0.4s ease both;
+  animation-delay: calc(var(--i) * 0.04s);
 }
+@keyframes cardIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+.card-enter-active { transition: opacity 0.3s ease, transform 0.3s ease; }
+.card-enter-from { opacity: 0; transform: translateY(14px); }
+.card-leave-to { opacity: 0; transform: translateY(-8px); }
+.card-move { transition: transform 0.3s ease; }
 .fw-card:hover { opacity: 0.85; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12); transform: translateY(-1px); }
 
 .card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -273,5 +305,15 @@ onMounted(async () => {
 .insufficient-msg { font-size: 11px; color: #f44336; }
 .confirm-msg { font-size: 13px; text-align: center; }
 .link-available { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; .btn { width: 100%; } }
+.link-note { font-size: 12px; color: var(--text-secondary); strong { font-family: monospace; color: var(--accent-primary); } }
 .no-link-msg { font-size: 12px; color: var(--text-secondary); text-align: center; }
+.processing-section { gap: 14px; padding: 22px 14px; }
+.processing-ring { width: 34px; height: 34px; border: 3px solid var(--border-primary); border-top-color: var(--accent-primary); border-radius: 50%; animation: spin 0.9s linear infinite; }
+.processing-msg { display: flex; flex-direction: column; align-items: center; gap: 4px; p { font-size: 13px; margin: 0; color: var(--text-primary); font-weight: 600; } }
+.processing-sub { font-size: 11px !important; font-weight: 400 !important; color: var(--text-secondary); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.modal-enter-active, .modal-leave-active { transition: opacity 0.25s ease; }
+.modal-enter-active .fw-modal, .modal-leave-active .fw-modal { transition: transform 0.25s ease; }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
+.modal-enter-from .fw-modal, .modal-leave-to .fw-modal { transform: scale(0.94); }
 </style>

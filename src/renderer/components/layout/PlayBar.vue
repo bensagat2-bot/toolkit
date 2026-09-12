@@ -8,6 +8,10 @@
       <div class="status">{{ statusText }}</div>
     </div>
     <div class="btnContent">
+      <div class="credits-chip" v-if="store.account" :title="'HWID: ' + store.account.hwid" @click="goTo('/firmwares')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg>
+        <span class="credits-value">{{ store.account.credits }}</span>
+      </div>
       <div class="btn" aria-label="MediaTek Tools" title="MediaTek Tools" @click="goTo('/mediatek')">
         <svg
           viewBox="0 0 24 24"
@@ -54,9 +58,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useAccountStore } from '@renderer/store/accountStore'
 
 const route = useRoute()
 const router = useRouter()
+const store = useAccountStore()
 
 const statusText = computed(() => {
   return route.name ? `${route.name} · Ready` : 'Ready'
@@ -160,6 +166,30 @@ const refresh = () => {
   padding-left: 10px;
   padding-right: 15px;
   gap: 18px;
+}
+
+.credits-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 14px;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  color: var(--accent-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+.credits-chip svg {
+  width: 14px;
+  height: 14px;
+}
+.credits-chip:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--accent-primary);
 }
 
 .btn {
