@@ -26,6 +26,22 @@ function loadSaved(): AccountInfo | null {
   }
 }
 
+function apiError(data: unknown, fallback: string): Error {
+  const err = (data as { error?: unknown })?.error
+  let msg = fallback
+  if (typeof err === 'string') msg = err
+  else if (err && typeof err === 'object') msg = (err as { message?: string }).message || JSON.stringify(err)
+  return new Error(msg)
+}
+
+async function parseJson(res: Response): Promise<Record<string, unknown> | null> {
+  try {
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
 export const useAccountStore = defineStore('account', () => {
   const account = ref<AccountInfo | null>(loadSaved())
   const initialized = ref(false)
@@ -62,9 +78,10 @@ export const useAccountStore = defineStore('account', () => {
         device_model: deviceModel,
       }),
     })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Registration failed')
-    const user = data.user
+    const data = await parseJson(res)
+    if (!res.ok) throw apiError(data, 'Registration failed')
+    const user = data?.user as Record<string, unknown> | undefined
+    if (!user) throw new Error('Unexpected server response')
     account.value = {
       id: user.id,
       username: user.username,
@@ -88,9 +105,10 @@ export const useAccountStore = defineStore('account', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hwid, password }),
     })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Login failed')
-    const user = data.user
+    const data = await parseJson(res)
+    if (!res.ok) throw apiError(data, 'Login failed')
+    const user = data?.user as Record<string, unknown> | undefined
+    if (!user) throw new Error('Unexpected server response')
     account.value = {
       id: user.id,
       username: user.username,
@@ -124,11 +142,11 @@ export const useAccountStore = defineStore('account', () => {
         token: account.value.token,
       }),
     })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Purchase failed')
-    account.value.credits = data.credits_left ?? account.value.credits
+    const data = await parseJson(res)
+    if (!res.ok) throw apiError(data, 'Purchase failed')
+    account.value.credits = (data?.credits_left as number | undefined) ?? account.value.credits
     persist()
-    return { link: data.link, extraction_code: data.extraction_code }
+    return { link: data?.link as string, extraction_code: (data?.extraction_code as string | null | undefined) ?? null }
   }
 
   return { account, isAuthed, initialized, init, register, login, logout, purchase }
