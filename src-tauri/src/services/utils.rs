@@ -463,10 +463,10 @@ pub fn anykernel(app: AppHandle, opts: AnyKernelOptions) -> Result<bool, String>
         }
         emit(&app, "Flash complete, rebooting device...");
         adb(&["reboot"], 10000);
-let elapsed = started.elapsed().as_secs();
-    emit(&app, format!("Elapsed Time: {}s", elapsed).as_str());
-    Ok(true)
-}
+        let elapsed = started.elapsed().as_secs();
+        emit(&app, format!("Elapsed Time: {}s", elapsed).as_str());
+        return Ok(true);
+    }
 
     emit(&app, if root { "No update-binary; falling back to fastboot." } else { "No root detected; falling back to fastboot." });
 
