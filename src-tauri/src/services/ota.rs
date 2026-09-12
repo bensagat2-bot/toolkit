@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::path::Path;
 
 use flate2::read::GzDecoder;
 use reqwest::blocking::Client;
+use serde::Serialize;
 
 const MIRROR_HOST: &str = "bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com";
 const BLOCK_SIZE: u64 = 4096;
@@ -176,7 +176,7 @@ impl<'a> PbReader<'a> {
 
 // ---------- Payload manifest model ----------
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct PartitionInfo {
     pub name: String,
     pub size_bytes: u64,
