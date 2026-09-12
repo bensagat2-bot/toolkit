@@ -3,30 +3,8 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use zip::ZipArchive;
 
-const ENC_PLATFORM_TOOLS: &[u8] = include_bytes!("../embed/platform-tools.zip.enc");
-const ENC_UNISOC: &[u8] = include_bytes!("../embed/unisoc.zip.enc");
-
-fn decipher() -> [u8; 12] {
-    let mut k = [0u8; 12];
-    k[0] = 0x56;
-    k[1] = 0x31;
-    k[2] = 0x50;
-    k[3] = 0x45;
-    k[4] = 0x72;
-    k[5] = 0x53;
-    k[6] = 0x65;
-    k[7] = 0x72;
-    k[8] = 0x76;
-    k[9] = 0x49;
-    k[10] = 0x63;
-    k[11] = 0x65;
-    k
-}
-
-fn decrypt(data: &[u8], key: &[u8]) -> Vec<u8> {
-    let key_len = key.len();
-    data.iter().enumerate().map(|(i, &b)| b ^ key[i % key_len]).collect()
-}
+const PLATFORM_TOOLS_ZIP: &[u8] = include_bytes!("../embed/platform-tools.zip");
+const UNISOC_ZIP: &[u8] = include_bytes!("../embed/unisoc.zip");
 
 fn cache_dir() -> PathBuf {
     dirs::data_local_dir()
@@ -61,12 +39,9 @@ fn extract_zip(data: &[u8], dest: &Path) -> Result<(), String> {
 }
 
 pub fn extract_all() -> Result<PathBuf, String> {
-    let key = decipher();
     let root = cache_dir();
     fs::create_dir_all(&root).map_err(|e| format!("Failed to create cache dir: {e}"))?;
-    let pt = decrypt(ENC_PLATFORM_TOOLS, &key);
-    let un = decrypt(ENC_UNISOC, &key);
-    extract_zip(&pt, &root.join("platform-tools"))?;
-    extract_zip(&un, &root.join("Unisoc"))?;
+    extract_zip(PLATFORM_TOOLS_ZIP, &root.join("platform-tools"))?;
+    extract_zip(UNISOC_ZIP, &root.join("Unisoc"))?;
     Ok(root)
 }
