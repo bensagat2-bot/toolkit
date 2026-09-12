@@ -10,15 +10,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|_app| {
-            match resources::extract_all() {
-                Ok(cache) => {
-                    services::unisoc::set_resource_dir(cache.clone());
-                    services::utils::set_resource_dir(cache);
-                }
-                Err(e) => {
-                    eprintln!("Failed to extract resources: {e}");
-                }
-            }
+            // platform-tools, scrcpy and Unisoc ship as bundle resources next to the exe.
+            let bundle = resources::bundle_dir();
+            services::unisoc::set_resource_dir(bundle.clone());
+            services::utils::set_resource_dir(bundle);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -11,21 +11,55 @@ pub fn set_resource_dir(path: PathBuf) {
     let _ = RESOURCE_DIR.set(path);
 }
 
-pub fn platform_tools_path() -> PathBuf {
-    RESOURCE_DIR.get()
-        .map(|d| d.join("platform-tools"))
-        .unwrap_or_else(|| {
-            let exe = std::env::current_exe().unwrap_or_default();
-            exe.parent().unwrap_or(Path::new(".")).join("platform-tools")
-        })
+// Mirrors v1per-wpf: find a bundled tool folder next to the app by walking up
+// the directory tree, falling back to the extracted cache, then to PATH.
+fn find_tool_dir(folder: &str, exe: &str) -> Option<PathBuf> {
+    if let Some(d) = RESOURCE_DIR.get() {
+        let p = d.join(folder);
+        if p.join(exe).exists() {
+            return Some(p);
+        }
+    }
+    let mut dir = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|p| p.to_path_buf()));
+    for _ in 0..8 {
+        if let Some(d) = dir {
+            // Tauri bundle resources live in a `resources/` subfolder next to the exe.
+            let in_resources = d.join("resources").join(folder);
+            if in_resources.join(exe).exists() {
+                return Some(in_resources);
+            }
+            let direct = d.join(folder);
+            if direct.join(exe).exists() {
+                return Some(direct);
+            }
+            dir = d.parent().map(|p| p.to_path_buf());
+        }
+    }
+    None
 }
 
-pub fn adb_path() -> PathBuf {
-    platform_tools_path().join("adb.exe")
+fn find_tool_exe(folder: &str, exe: &str) -> String {
+    find_tool_dir(folder, exe)
+        .map(|p| p.join(exe).to_string_lossy().into_owned())
+        .unwrap_or_else(|| exe.to_string()) // fallback: PATH
 }
 
-pub fn fastboot_path() -> PathBuf {
-    platform_tools_path().join("fastboot.exe")
+pub fn platform_tools_path() -> Option<PathBuf> {
+    find_tool_dir("platform-tools", "adb.exe")
+}
+
+pub fn adb_path() -> String {
+    find_tool_exe("platform-tools", "adb.exe")
+}
+
+pub fn fastboot_path() -> String {
+    find_tool_exe("platform-tools", "fastboot.exe")
+}
+
+pub fn scrcpy_path() -> PathBuf {
+    find_tool_dir("scrcpy", "scrcpy.exe").unwrap_or_default()
 }
 
 pub fn run_cmd(program: &str, args: &[&str], timeout_ms: u64) -> String {
@@ -73,11 +107,11 @@ fn run_stdout(cmd: &mut Command, timeout_ms: u64) -> String {
 }
 
 fn adb(args: &[&str], timeout_ms: u64) -> String {
-    run_stdout(base_cmd(adb_path().to_str().unwrap_or("adb")).args(args), timeout_ms)
+    run_stdout(base_cmd(&adb_path()).args(args), timeout_ms)
 }
 
 fn fastboot(args: &[&str], timeout_ms: u64) -> String {
-    run_stdout(base_cmd(fastboot_path().to_str().unwrap_or("fastboot")).args(args), timeout_ms)
+    run_stdout(base_cmd(&fastboot_path()).args(args), timeout_ms)
 }
 
 fn adb_serial(serial: &str, args: &[&str], timeout_ms: u64) -> String {
@@ -560,15 +594,6 @@ pub fn anykernel(app: AppHandle, opts: AnyKernelOptions) -> Result<bool, String>
 
 // ── Scrcpy ──────────────────────────────────────────────────
 
-pub fn scrcpy_path() -> PathBuf {
-    RESOURCE_DIR.get()
-        .map(|d| d.join("scrcpy"))
-        .unwrap_or_else(|| {
-            let exe = std::env::current_exe().unwrap_or_default();
-            exe.parent().unwrap_or(Path::new(".")).join("scrcpy")
-        })
-}
-
 fn scrcpy_running() -> bool {
     let out = run_stdout(base_cmd("tasklist").args(["/FI", "IMAGENAME eq scrcpy.exe"]), 5000);
     out.to_lowercase().contains("scrcpy.exe")
@@ -596,6 +621,11 @@ pub fn launch_scrcpy(app: AppHandle) -> Result<bool, String> {
     emit(&app, "Running scrcpy-noconsole.vbs please wait....");
     let mut cmd = base_cmd("wscript.exe");
     cmd.current_dir(&dir).arg("scrcpy-noconsole.vbs");
+    // Put the bundled platform-tools on PATH so scrcpy can find adb.
+    if let Some(tools) = platform_tools_path() {
+        let existing = std::env::var("PATH").unwrap_or_default();
+        cmd.env("PATH", format!("{};{}", tools.to_string_lossy(), existing));
+    }
     let child = cmd.spawn().map_err(|e| format!("Failed to launch scrcpy: {e}"))?;
     drop(child);
 

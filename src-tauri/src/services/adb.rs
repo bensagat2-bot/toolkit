@@ -13,16 +13,20 @@ fn base_command(program: &str) -> Command {
 }
 
 fn adb_path() -> String {
-    utils::platform_tools_path().join("adb.exe").to_string_lossy().into_owned()
+    utils::adb_path()
 }
 
 fn fastboot_path() -> String {
-    utils::platform_tools_path().join("fastboot.exe").to_string_lossy().into_owned()
+    utils::fastboot_path()
+}
+
+fn is_bundled(path: &str) -> bool {
+    Path::new(path).is_absolute()
 }
 
 pub async fn run_adb(args: &[&str]) -> String {
     let path = adb_path();
-    if !std::path::Path::new(&path).exists() {
+    if is_bundled(&path) && !std::path::Path::new(&path).exists() {
         return "adb: embedded platform-tools missing (reinstall the toolkit)".into();
     }
     let output = base_command(&path)
@@ -58,7 +62,7 @@ pub async fn detect() -> (String, Option<String>) {
 
 pub async fn run_fastboot(args: &[&str]) -> String {
     let path = fastboot_path();
-    if !std::path::Path::new(&path).exists() {
+    if is_bundled(&path) && !std::path::Path::new(&path).exists() {
         return "fastboot: embedded platform-tools missing (reinstall the toolkit)".into();
     }
     let output = base_command(&path)
