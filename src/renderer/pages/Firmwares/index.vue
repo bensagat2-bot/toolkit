@@ -150,6 +150,7 @@
     <ExtractDialog
       v-if="showExtract && revealedLink"
       :url="revealedLink"
+      :pwd="revealedCode"
       @close="closeExtract"
     />
   </div>
@@ -183,7 +184,7 @@ const showExtract = ref(false)
 
 const canExtract = computed(() => {
   const link = revealedLink.value
-  return !!link && (link.includes('ota_full') || link.includes('ota-') || link.includes('images_') || link.endsWith('.tgz'))
+  return !!link && (link.includes('/disk/s/') || link.includes('ota_full') || link.includes('ota-') || link.includes('images_') || link.endsWith('.tgz'))
 })
 
 // Builds the full FRBox URL with the password embedded, handling bare paths.

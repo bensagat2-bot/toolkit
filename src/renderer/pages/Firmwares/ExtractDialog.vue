@@ -76,6 +76,7 @@ import { sendIpcToMain, showSelectFolder } from '@renderer/utils/ipc'
 
 const props = defineProps({
   url: { type: String, required: true },
+  pwd: { type: String, default: '' },
 })
 
 const emit = defineEmits(['close'])
@@ -91,7 +92,8 @@ const progressText = ref('')
 const done = ref('')
 const extractError = ref('')
 
-const isTgz = computed(() => props.url.includes('images_') || props.url.endsWith('.tgz'))
+const isFrbox = computed(() => props.url.includes('/disk/s/'))
+const isTgz = computed(() => !isFrbox.value && (props.url.includes('images_') || props.url.endsWith('.tgz')))
 
 const canStart = computed(() => {
   if (!outputDir.value) return false
@@ -118,7 +120,15 @@ async function start() {
     : `Extracting ${selected.value}.img...`
   try {
     let result
-    if (isTgz.value) {
+    if (isFrbox.value) {
+      const path = `${outputDir.value}\\${selected.value}`
+      result = await sendIpcToMain('frbox_extract_partition', {
+        url: props.url,
+        pwd: props.pwd || null,
+        name: selected.value,
+        outputPath: path,
+      })
+    } else if (isTgz.value) {
       const path = `${outputDir.value}\\${imageName.value.replace(/\.img$/, '')}.img`
       result = await sendIpcToMain('ota_extract_tgz', {
         url: props.url,
@@ -151,7 +161,17 @@ onMounted(async () => {
     return
   }
   try {
-    partitions.value = await sendIpcToMain('ota_list_partitions', { url: props.url })
+    if (isFrbox.value) {
+      const entries = await sendIpcToMain('frbox_list_partitions', {
+        url: props.url,
+        pwd: props.pwd || null,
+      })
+      partitions.value = (entries || [])
+        .filter((e) => e.uncompressed_size > 0)
+        .map((e) => ({ name: e.name, size_bytes: e.uncompressed_size }))
+    } else {
+      partitions.value = await sendIpcToMain('ota_list_partitions', { url: props.url })
+    }
     loaded.value = true
   } catch (e) {
     error.value = e || 'Failed to read partitions'

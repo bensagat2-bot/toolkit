@@ -27,6 +27,8 @@ pub fn run() {
             commands::ota_list_partitions,
             commands::ota_extract_partition,
             commands::ota_extract_tgz,
+            commands::frbox_list_partitions,
+            commands::frbox_extract_partition,
             commands::detect_device,
             commands::mtk_find_port,
             commands::mtk_load_scatter,

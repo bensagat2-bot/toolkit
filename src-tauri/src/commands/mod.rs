@@ -90,6 +90,34 @@ pub async fn open_path(path: String) -> Result<(), String> {
     open::that(&path).map_err(|e| e.to_string())
 }
 
+// ── FRBox (Transsion) Commands ───────────────────────────────
+
+#[command]
+pub async fn frbox_list_partitions(
+    url: String,
+    pwd: Option<String>,
+) -> Result<Vec<crate::services::frbox::RemoteZipEntry>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::frbox::list_partitions(&url, pwd.as_deref())
+    })
+    .await
+    .map_err(|e| format!("FRBox task failed: {e}"))?
+}
+
+#[command]
+pub async fn frbox_extract_partition(
+    url: String,
+    pwd: Option<String>,
+    name: String,
+    output_path: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::frbox::extract_partition(&url, pwd.as_deref(), &name, &output_path)
+    })
+    .await
+    .map_err(|e| format!("FRBox task failed: {e}"))?
+}
+
 // ── MediaTek Commands ─────────────────────────────────────────
 
 #[command]

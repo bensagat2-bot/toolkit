@@ -2,6 +2,7 @@ pub mod adb;
 pub mod account;
 pub mod device;
 pub mod fastboot;
+pub mod frbox;
 pub mod mtk;
 pub mod ota;
 pub mod unisoc;
