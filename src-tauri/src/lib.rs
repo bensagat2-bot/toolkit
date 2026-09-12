@@ -1,16 +1,25 @@
 mod commands;
+mod protection;
+mod resources;
 mod services;
 
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    protection::init();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            // Set resource directory for Unisoc tools
-            if let Some(resource_dir) = app.path().resource_dir().ok() {
-                services::unisoc::set_resource_dir(resource_dir);
+            match resources::extract_all() {
+                Ok(cache) => {
+                    services::unisoc::set_resource_dir(cache.clone());
+                    services::utils::set_resource_dir(cache);
+                }
+                Err(e) => {
+                    eprintln!("Failed to extract resources: {e}");
+                }
             }
             Ok(())
         })
@@ -58,6 +67,15 @@ pub fn run() {
             commands::utils_root,
             commands::utils_anykernel,
             commands::utils_force_fastboot,
+            commands::xiaomi_detect_device,
+            commands::xiaomi_get_product,
+            commands::xiaomi_get_token,
+            commands::xiaomi_fastboot_stage,
+            commands::xiaomi_fastboot_oem_unlock,
+            commands::xiaomi_reboot_bootloader,
+            commands::xiaomi_scan_rom,
+            commands::xiaomi_run_fastboot,
+            commands::xiaomi_run_adb,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

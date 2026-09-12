@@ -325,3 +325,50 @@ pub async fn utils_force_fastboot(app: tauri::AppHandle) -> Result<bool, String>
         .await
         .map_err(|e| format!("Force fastboot task failed: {e}"))?
 }
+
+// ── Xiaomi Commands ──────────────────────────────────────────
+
+#[command]
+pub async fn xiaomi_detect_device() -> Result<crate::services::xiaomi::DeviceInfo, String> {
+    Ok(crate::services::xiaomi::detect_device())
+}
+
+#[command]
+pub async fn xiaomi_get_product() -> Result<String, String> {
+    crate::services::xiaomi::get_device_product()
+}
+
+#[command]
+pub async fn xiaomi_get_token() -> Result<String, String> {
+    crate::services::xiaomi::get_device_token()
+}
+
+#[command]
+pub async fn xiaomi_fastboot_stage(file: String) -> Result<String, String> {
+    crate::services::xiaomi::fastboot_stage(&file)
+}
+
+#[command]
+pub async fn xiaomi_fastboot_oem_unlock() -> Result<String, String> {
+    crate::services::xiaomi::fastboot_oem_unlock()
+}
+
+#[command]
+pub async fn xiaomi_reboot_bootloader() -> Result<String, String> {
+    crate::services::xiaomi::fastboot_reboot()
+}
+
+#[command]
+pub async fn xiaomi_scan_rom(folder: String) -> Result<serde_json::Value, String> {
+    crate::services::xiaomi::scan_rom_folder(&folder)
+}
+
+#[command]
+pub async fn xiaomi_run_fastboot(args: Vec<String>) -> Result<String, String> {
+    Ok(crate::services::xiaomi::run_fastboot_cmd(args))
+}
+
+#[command]
+pub async fn xiaomi_run_adb(args: Vec<String>) -> Result<String, String> {
+    Ok(crate::services::xiaomi::run_adb_cmd(args))
+}

@@ -1,8 +1,36 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter};
+
+static RESOURCE_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+pub fn set_resource_dir(path: PathBuf) {
+    let _ = RESOURCE_DIR.set(path);
+}
+
+pub fn platform_tools_path() -> PathBuf {
+    RESOURCE_DIR.get()
+        .map(|d| d.join("platform-tools"))
+        .unwrap_or_else(|| {
+            let exe = std::env::current_exe().unwrap_or_default();
+            exe.parent().unwrap_or(Path::new(".")).join("platform-tools")
+        })
+}
+
+pub fn adb_path() -> PathBuf {
+    platform_tools_path().join("adb.exe")
+}
+
+pub fn fastboot_path() -> PathBuf {
+    platform_tools_path().join("fastboot.exe")
+}
+
+pub fn run_cmd(program: &str, args: &[&str], timeout_ms: u64) -> String {
+    run_stdout(base_cmd(program).args(args), timeout_ms)
+}
 
 fn emit(app: &AppHandle, msg: &str) {
     let _ = app.emit("utils:progress", serde_json::json!({ "message": msg }));
@@ -45,11 +73,11 @@ fn run_stdout(cmd: &mut Command, timeout_ms: u64) -> String {
 }
 
 fn adb(args: &[&str], timeout_ms: u64) -> String {
-    run_stdout(base_cmd("adb").args(args), timeout_ms)
+    run_stdout(base_cmd(adb_path().to_str().unwrap_or("adb")).args(args), timeout_ms)
 }
 
 fn fastboot(args: &[&str], timeout_ms: u64) -> String {
-    run_stdout(base_cmd("fastboot").args(args), timeout_ms)
+    run_stdout(base_cmd(fastboot_path().to_str().unwrap_or("fastboot")).args(args), timeout_ms)
 }
 
 fn adb_serial(serial: &str, args: &[&str], timeout_ms: u64) -> String {
@@ -107,24 +135,24 @@ fn pick_asset(release: &serde_json::Value, exact: &str) -> Option<serde_json::Va
     release.get("assets")?.as_array()?.iter().find(|a| asset_name(a) == exact).cloned()
 }
 
-fn download_file(app: &AppHandle, url: &str, filename: &str) -> Option<PathBuf> {
+fn download_file(app: &AppHandle, url: &str, filename: &str) -> Result<PathBuf, String> {
     let client = reqwest::blocking::Client::builder()
         .user_agent("V1Per-Toolkit/1.0")
         .timeout(std::time::Duration::from_secs(600))
         .build()
-        .ok()?;
+        .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
     let dest = downloads_dir().join(filename);
     if dest.exists() && dest.metadata().map(|m| m.len()).unwrap_or(0) > 0 {
-        return Some(dest);
+        return Ok(dest);
     }
-    let resp = client.get(url).send().ok()?;
+    let resp = client.get(url).send().map_err(|e| format!("HTTP request failed: {e}"))?;
     if !resp.status().is_success() {
-        return None;
+        return Err(format!("HTTP {} from {}", resp.status(), url));
     }
-    let bytes = resp.bytes().ok()?;
-    std::fs::write(&dest, &bytes).ok()?;
+    let bytes = resp.bytes().map_err(|e| format!("Failed to read response: {e}"))?;
+    std::fs::write(&dest, &bytes).map_err(|e| format!("Failed to write file: {e}"))?;
     emit(app, "Downloading... DONE");
-    Some(dest)
+    Ok(dest)
 }
 
 fn ready_adb_device() -> Option<String> {
@@ -179,7 +207,7 @@ fn flash_looks_ok(output: &str) -> bool {
 pub fn driver_download(app: AppHandle, name: String, url: String) -> Result<bool, String> {
     emit(&app, format!("Downloading [{}] from releases...", name).as_str());
     let filename = url.rsplit('/').next().filter(|f| f.contains('.')).unwrap_or("driver.zip");
-    let dest = download_file(&app, &url, filename).ok_or("Download failed")?;
+    let dest = download_file(&app, &url, filename)?;
     emit(&app, format!("Saving to Downloads folder... DONE ({})", dest.display()).as_str());
     emit(&app, "Enjoy!!!");
     Ok(true)
@@ -263,7 +291,7 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     let apk_name = asset_name(&apk);
 
     emit(&app, "Downloading...");
-    let apk_path = download_file(&app, &apk_url, &apk_name).ok_or("Download failed.")?;
+    let apk_path = download_file(&app, &apk_url, &apk_name)?;
     emit(&app, format!("Downloading [{}]... DONE", apk_label).as_str());
 
     emit(&app, format!("Installing [{}] on device...", manager_label).as_str());
@@ -292,7 +320,7 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     if let Some(ksud_asset) = ksud {
         let ksud_url = asset_url(&ksud_asset);
         let ksud_name = asset_name(&ksud_asset);
-        if let Some(local) = download_file(&app, &ksud_url, &ksud_name) {
+        if let Ok(local) = download_file(&app, &ksud_url, &ksud_name) {
             adb_serial(&serial, &["push", local.to_string_lossy().as_ref(), remote_bin], 60000);
             adb_serial(&serial, &["push", boot_img.to_string_lossy().as_ref(), remote_in], 120000);
             adb_serial(&serial, &["shell", "chmod", "755", remote_bin], 10000);

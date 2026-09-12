@@ -84,6 +84,20 @@ const menus: Array<{
     polylines: [],
   },
   {
+    to: '/xiaomi',
+    name: 'Xiaomi',
+    label: 'Xiaomi Tools',
+    paths: [],
+    lines: [],
+    rects: [
+      { x: '5', y: '2', width: '14', height: '20', rx: '2' },
+    ],
+    circles: [
+      { cx: '12', cy: '18', r: '1' },
+    ],
+    polylines: [],
+  },
+  {
     to: '/utilities',
     name: 'Utilities',
     label: 'Utilities',

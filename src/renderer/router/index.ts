@@ -28,6 +28,16 @@ const router = createRouter({
       component: () => import('@/pages/Unisoc/run.vue'),
     },
     {
+      path: '/xiaomi',
+      name: 'Xiaomi',
+      component: () => import('@/pages/Xiaomi/index.vue'),
+    },
+    {
+      path: '/xiaomi/run',
+      name: 'XiaomiRun',
+      component: () => import('@/pages/Xiaomi/run.vue'),
+    },
+    {
       path: '/utilities',
       name: 'Utilities',
       component: () => import('@/pages/Utilities/index.vue'),

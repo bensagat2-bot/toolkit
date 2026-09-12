@@ -27,7 +27,6 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 serialport = "4"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["processthreadsapi"] }
 
 [profile.release]
 panic = "abort"
@@ -35,3 +34,10 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
+overflow-checks = false
+debug = false
+
+[profile.release.package."*"]
+opt-level = "s"
+strip = true
+debug = false

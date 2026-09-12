@@ -440,6 +440,7 @@ onBeforeUnmount(() => {
   height: 100%;
   padding: 10px 15px 15px;
   font-size: 14px;
+  overflow-y: auto;
 }
 
 .list-content ul {

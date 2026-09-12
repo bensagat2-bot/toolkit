@@ -1,5 +1,7 @@
 use std::process::Command;
 
+use super::utils;
+
 fn base_command(program: &str) -> Command {
     let mut cmd = Command::new(program);
     #[cfg(windows)]
@@ -10,8 +12,16 @@ fn base_command(program: &str) -> Command {
     cmd
 }
 
+fn adb_path() -> String {
+    utils::platform_tools_path().join("adb.exe").to_string_lossy().into_owned()
+}
+
+fn fastboot_path() -> String {
+    utils::platform_tools_path().join("fastboot.exe").to_string_lossy().into_owned()
+}
+
 pub async fn run_adb(args: &[&str]) -> String {
-    let output = base_command("adb")
+    let output = base_command(&adb_path())
         .args(args)
         .output()
         .unwrap_or_else(|_| std::process::Output {
@@ -43,7 +53,7 @@ pub async fn detect() -> (String, Option<String>) {
 }
 
 pub async fn run_fastboot(args: &[&str]) -> String {
-    let output = base_command("fastboot")
+    let output = base_command(&fastboot_path())
         .args(args)
         .output()
         .unwrap_or_else(|_| std::process::Output {
