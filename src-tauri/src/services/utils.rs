@@ -156,15 +156,17 @@ fn download_file(app: &AppHandle, url: &str, filename: &str) -> Result<PathBuf, 
 }
 
 fn ready_adb_device() -> Option<String> {
-    for _ in 0..5 {
+    for _ in 0..20 {
         let out = adb(&["devices"], 8000);
         for line in out.lines().skip(1) {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 2 && parts[1] == "device" {
-                return Some(parts[0].to_string());
+            let mut parts = line.split_whitespace();
+            let serial = parts.next();
+            let state = parts.next().unwrap_or("");
+            if state == "device" {
+                return serial.map(|s| s.to_string());
             }
         }
-        std::thread::sleep(std::time::Duration::from_millis(800));
+        std::thread::sleep(std::time::Duration::from_millis(1000));
     }
     None
 }
