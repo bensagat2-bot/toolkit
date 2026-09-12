@@ -206,12 +206,16 @@ fn get_download_url(c: &Client, token: &str, share_id: &str, file_id: &str) -> R
 }
 
 fn find_firmware_zip(files: &[RemoteFile]) -> Option<RemoteFile> {
-    let mut zips: Vec<&RemoteFile> = files.iter().filter(|f| !f.isdir && f.filename.to_lowercase().ends_with(".zip")).collect();
+    let mut zips: Vec<RemoteFile> = files
+        .iter()
+        .filter(|f| !f.isdir && f.filename.to_lowercase().ends_with(".zip"))
+        .cloned()
+        .collect();
     if zips.is_empty() {
-        zips = files.iter().filter(|f| !f.isdir).collect();
+        zips = files.iter().filter(|f| !f.isdir).cloned().collect();
     }
     zips.sort_by(|a, b| b.size.cmp(&a.size));
-    zips.first().cloned()
+    zips.into_iter().next()
 }
 
 // ---------- Remote ZIP parsing over HTTP Range ----------
