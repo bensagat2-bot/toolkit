@@ -1,8 +1,4 @@
-use std::path::Path;
-use std::process::Command;
-
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
 
 use crate::services::utils;
 
@@ -20,12 +16,12 @@ pub struct DeviceInfo {
 
 fn adb(args: &[&str], timeout_ms: u64) -> String {
     let path = utils::adb_path();
-    utils::run_cmd(&path, args, timeout_ms)
+    utils::run_cmd(path.to_str().unwrap_or("adb"), args, timeout_ms)
 }
 
 fn fastboot(args: &[&str], timeout_ms: u64) -> String {
     let path = utils::fastboot_path();
-    utils::run_cmd(&path, args, timeout_ms)
+    utils::run_cmd(path.to_str().unwrap_or("fastboot"), args, timeout_ms)
 }
 
 pub fn detect_device() -> DeviceInfo {

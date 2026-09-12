@@ -3,15 +3,13 @@ mod protection;
 mod resources;
 mod services;
 
-use tauri::Manager;
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     protection::init();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .setup(|app| {
+        .setup(|_app| {
             match resources::extract_all() {
                 Ok(cache) => {
                     services::unisoc::set_resource_dir(cache.clone());
