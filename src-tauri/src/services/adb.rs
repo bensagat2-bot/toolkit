@@ -21,7 +21,7 @@ fn fastboot_path() -> String {
 }
 
 fn is_bundled(path: &str) -> bool {
-    Path::new(path).is_absolute()
+    std::path::Path::new(path).is_absolute()
 }
 
 pub async fn run_adb(args: &[&str]) -> String {
