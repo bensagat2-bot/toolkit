@@ -1,4 +1,5 @@
 pub mod adb;
+pub mod account;
 pub mod device;
 pub mod fastboot;
 pub mod mtk;

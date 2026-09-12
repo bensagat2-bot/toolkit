@@ -114,7 +114,9 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useAccountStore } from '@renderer/store/accountStore'
 
+const store = useAccountStore()
 const API_BASE = 'https://firmwaresss-devices.vercel.app'
 const items = ref([])
 const total = ref(0)
@@ -124,7 +126,7 @@ const loading = ref(false)
 const source = ref('xiaomi')
 const search = ref('')
 const selectedItem = ref(null)
-const credits = ref(0)
+const credits = ref(store.account?.credits ?? 0)
 const copied = ref(false)
 const confirmingPurchase = ref(false)
 const linkRevealed = ref(false)
@@ -174,7 +176,9 @@ function startPurchase() {
 function confirmDownload() {
   confirmingPurchase.value = false
   linkRevealed.value = true
-  credits.value = Math.max(0, credits.value - 5)
+  const newCredits = Math.max(0, credits.value - 5)
+  credits.value = newCredits
+  store.updateCredits(newCredits)
 }
 
 function copyLink() {
@@ -185,7 +189,11 @@ function copyLink() {
   setTimeout(() => { copied.value = false }, 2000)
 }
 
-onMounted(() => { fetchFirmwares() })
+onMounted(async () => {
+  await store.refreshCredits()
+  credits.value = store.account?.credits ?? 0
+  fetchFirmwares()
+})
 </script>
 
 <style scoped>

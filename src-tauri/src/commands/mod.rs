@@ -1,5 +1,17 @@
 use tauri::command;
 
+// ── Account Commands ─────────────────────────────────────────
+
+#[command]
+pub fn get_hwid() -> String {
+    crate::services::account::get_hwid()
+}
+
+#[command]
+pub fn get_device_model() -> String {
+    crate::services::account::get_device_model()
+}
+
 // ── Device Commands ──────────────────────────────────────────
 
 #[command]

@@ -1,5 +1,7 @@
 <template>
-  <div id="container">
+  <Splash v-if="!store.initialized" />
+  <AuthPage v-else-if="!store.isAuthed" />
+  <div v-else id="container">
     <Aside id="left" />
     <div id="right">
       <Toolbar id="toolbar" />
@@ -16,9 +18,19 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue'
+import Splash from '@/components/layout/Splash.vue'
 import Aside from '@/components/layout/Aside.vue'
 import Toolbar from '@/components/layout/Toolbar.vue'
 import PlayBar from '@/components/layout/PlayBar.vue'
+import AuthPage from '@/pages/Auth/index.vue'
+import { useAccountStore } from '@/store/accountStore'
+
+const store = useAccountStore()
+
+onMounted(() => {
+  store.init()
+})
 </script>
 
 <style scoped>

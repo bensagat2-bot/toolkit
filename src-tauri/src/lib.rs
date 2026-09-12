@@ -22,6 +22,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::get_hwid,
+            commands::get_device_model,
             commands::detect_device,
             commands::mtk_find_port,
             commands::mtk_load_scatter,
