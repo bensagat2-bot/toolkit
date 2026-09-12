@@ -3,6 +3,7 @@ pub mod account;
 pub mod device;
 pub mod fastboot;
 pub mod mtk;
+pub mod ota;
 pub mod unisoc;
 pub mod utils;
 pub mod xiaomi;

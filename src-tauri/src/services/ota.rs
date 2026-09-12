@@ -1,0 +1,696 @@
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::path::Path;
+
+use flate2::read::GzDecoder;
+use reqwest::blocking::Client;
+
+const MIRROR_HOST: &str = "bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com";
+const BLOCK_SIZE: u64 = 4096;
+const PAYLOAD_MEMBER: &str = "payload.bin";
+const READAHEAD: u64 = 8 * 1024 * 1024;
+
+pub fn mirror_url(url: &str) -> String {
+    if url.contains("bigota.d.miui.com") || url.contains("ultimateota.d.miui.com") {
+        if let Some(colon) = url.find("://") {
+            let scheme = &url[..colon + 3];
+            let rest = &url[colon + 3..];
+            if let Some(slash) = rest.find('/') {
+                return format!("{scheme}{MIRROR_HOST}{}", &rest[slash..]);
+            }
+        }
+    }
+    url.to_string()
+}
+
+fn client() -> Client {
+    Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .timeout(std::time::Duration::from_secs(180))
+        .build()
+        .unwrap_or_default()
+}
+
+fn fetch_range(c: &Client, url: &str, start: u64, end: u64) -> Result<Vec<u8>, String> {
+    let resp = c
+        .get(url)
+        .header("Range", format!("bytes={start}-{end}"))
+        .send()
+        .map_err(|e| format!("range request failed: {e}"))?;
+    if resp.status().as_u16() != 206 && resp.status().as_u16() != 200 {
+        return Err(format!("range request failed: HTTP {}", resp.status()));
+    }
+    resp.bytes()
+        .map(|b| b.to_vec())
+        .map_err(|e| format!("read failed: {e}"))
+}
+
+// ---------- Remote zip central directory parsing ----------
+
+fn u16le(b: &[u8], off: usize) -> u16 {
+    u16::from_le_bytes([b[off], b[off + 1]])
+}
+
+fn u32le(b: &[u8], off: usize) -> u32 {
+    u32::from_le_bytes([b[off], b[off + 1], b[off + 2], b[off + 3]])
+}
+
+struct ZipEntry {
+    name: String,
+    local_header_offset: u64,
+    size: u64,
+}
+
+/// Locate payload.bin inside a remote zip, returns (data_offset, size).
+fn locate_payload(c: &Client, url: &str) -> Result<(u64, u64), String> {
+    let resp = c
+        .get(url)
+        .header("Range", "bytes=0-0")
+        .send()
+        .map_err(|e| format!("head failed: {e}"))?;
+    let total = resp
+        .headers()
+        .get("content-range")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.rsplit('/').next())
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .ok_or("cannot determine remote file size")?;
+
+    let tail_start = total.saturating_sub(22 + 65535);
+    let tail = fetch_range(c, url, tail_start, total - 1)?;
+
+    let mut eocd = None;
+    let mut i = tail.len();
+    while i >= 4 {
+        i -= 1;
+        if tail[i] == 0x50 && tail[i + 1] == 0x4b && tail[i + 2] == 0x05 && tail[i + 3] == 0x06 {
+            eocd = Some(i);
+            break;
+        }
+    }
+    let eocd = eocd.ok_or("EOCD not found")?;
+    let cd_size = u32le(&tail, eocd + 12) as u64;
+    let cd_offset = u32le(&tail, eocd + 16) as u64;
+
+    let cd = fetch_range(c, url, cd_offset, cd_offset + cd_size - 1)?;
+    let mut entries = Vec::new();
+    let mut p = 0usize;
+    while p + 46 <= cd.len() {
+        if &cd[p..p + 4] != b"PK\x01\x02" {
+            break;
+        }
+        let name_len = u16le(&cd, p + 28) as usize;
+        let extra_len = u16le(&cd, p + 30) as usize;
+        let comment_len = u16le(&cd, p + 32) as usize;
+        let local_offset = u32le(&cd, p + 42) as u64;
+        let size = u32le(&cd, p + 24) as u64;
+        if p + 46 + name_len > cd.len() {
+            break;
+        }
+        let name = String::from_utf8_lossy(&cd[p + 46..p + 46 + name_len]).to_string();
+        entries.push(ZipEntry {
+            name,
+            local_header_offset: local_offset,
+            size,
+        });
+        p += 46 + name_len + extra_len + comment_len;
+    }
+
+    let entry = entries
+        .iter()
+        .find(|e| e.name == PAYLOAD_MEMBER)
+        .ok_or("payload.bin not found in OTA")?;
+
+    let lh = fetch_range(c, url, entry.local_header_offset, entry.local_header_offset + 29)?;
+    if lh.len() < 30 || &lh[0..4] != b"PK\x03\x04" {
+        return Err("invalid local header".to_string());
+    }
+    let name_len = u16le(&lh, 26) as u64;
+    let extra_len = u16le(&lh, 28) as u64;
+    let data_offset = entry.local_header_offset + 30 + name_len + extra_len;
+    Ok((data_offset, entry.size))
+}
+
+// ---------- Minimal protobuf wire reader ----------
+
+struct PbReader<'a> {
+    buf: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> PbReader<'a> {
+    fn new(buf: &'a [u8]) -> Self {
+        Self { buf, pos: 0 }
+    }
+    fn varint(&mut self) -> Result<u64, String> {
+        let mut result: u64 = 0;
+        let mut shift = 0u32;
+        loop {
+            let b = *self.buf.get(self.pos).ok_or("varint overflow")?;
+            self.pos += 1;
+            result |= ((b & 0x7f) as u64) << shift;
+            if b & 0x80 == 0 {
+                return Ok(result);
+            }
+            shift += 7;
+            if shift >= 64 {
+                return Err("varint too long".to_string());
+            }
+        }
+    }
+    fn tag(&mut self) -> Result<(u64, u64), String> {
+        let tag = self.varint()?;
+        let field = tag >> 3;
+        let wire = tag & 0x7;
+        Ok((field, wire))
+    }
+    fn bytes(&mut self, len: usize) -> Result<&'a [u8], String> {
+        if self.pos + len > self.buf.len() {
+            return Err("field overrun".to_string());
+        }
+        let s = &self.buf[self.pos..self.pos + len];
+        self.pos += len;
+        Ok(s)
+    }
+}
+
+// ---------- Payload manifest model ----------
+
+#[derive(Clone)]
+pub struct PartitionInfo {
+    pub name: String,
+    pub size_bytes: u64,
+}
+
+struct Operation {
+    op_type: u32,
+    data_offset: u64,
+    data_length: u64,
+    dst_blocks: u64,
+}
+
+struct Partition {
+    name: String,
+    operations: Vec<Operation>,
+}
+
+fn parse_manifest(manifest_raw: &[u8]) -> Result<Vec<Partition>, String> {
+    let mut r = PbReader::new(manifest_raw);
+    let mut partitions = Vec::new();
+    loop {
+        if r.pos >= manifest_raw.len() {
+            break;
+        }
+        let (field, wire) = r.tag()?;
+        match (field, wire) {
+            (13, 2) => {
+                let len = r.varint()? as usize;
+                let data = r.bytes(len)?;
+                partitions.push(parse_partition(data)?);
+            }
+            (_, 0) => {
+                r.varint()?;
+            }
+            (_, 1) => {
+                r.bytes(8)?;
+            }
+            (_, 2) => {
+                let len = r.varint()? as usize;
+                r.bytes(len)?;
+            }
+            (_, 5) => {
+                r.bytes(4)?;
+            }
+            _ => return Err("unsupported wire type".to_string()),
+        }
+    }
+    Ok(partitions)
+}
+
+fn parse_partition(data: &[u8]) -> Result<Partition, String> {
+    let mut r = PbReader::new(data);
+    let mut name = String::new();
+    let mut operations = Vec::new();
+    loop {
+        if r.pos >= data.len() {
+            break;
+        }
+        let (field, wire) = r.tag()?;
+        match (field, wire) {
+            (1, 2) => {
+                let len = r.varint()? as usize;
+                let s = r.bytes(len)?;
+                name = String::from_utf8_lossy(s).to_string();
+            }
+            (3, 2) => {
+                let len = r.varint()? as usize;
+                let data = r.bytes(len)?;
+                operations.push(parse_operation(data)?);
+            }
+            (_, 0) => {
+                r.varint()?;
+            }
+            (_, 1) => {
+                r.bytes(8)?;
+            }
+            (_, 2) => {
+                let len = r.varint()? as usize;
+                r.bytes(len)?;
+            }
+            (_, 5) => {
+                r.bytes(4)?;
+            }
+            _ => return Err("unsupported wire type".to_string()),
+        }
+    }
+    Ok(Partition { name, operations })
+}
+
+fn parse_operation(data: &[u8]) -> Result<Operation, String> {
+    let mut r = PbReader::new(data);
+    let mut op_type = 0u32;
+    let mut data_offset = 0u64;
+    let mut data_length = 0u64;
+    let mut dst_blocks = 0u64;
+    loop {
+        if r.pos >= data.len() {
+            break;
+        }
+        let (field, wire) = r.tag()?;
+        match (field, wire) {
+            (1, 0) => op_type = r.varint()? as u32,
+            (2, 0) => data_offset = r.varint()?,
+            (3, 0) => data_length = r.varint()?,
+            (7, 2) => {
+                let len = r.varint()? as usize;
+                let data = r.bytes(len)?;
+                dst_blocks += parse_extent_blocks(data)?;
+            }
+            (_, 0) => {
+                r.varint()?;
+            }
+            (_, 1) => {
+                r.bytes(8)?;
+            }
+            (_, 2) => {
+                let len = r.varint()? as usize;
+                r.bytes(len)?;
+            }
+            (_, 5) => {
+                r.bytes(4)?;
+            }
+            _ => return Err("unsupported wire type".to_string()),
+        }
+    }
+    Ok(Operation {
+        op_type,
+        data_offset,
+        data_length,
+        dst_blocks,
+    })
+}
+
+fn parse_extent_blocks(data: &[u8]) -> Result<u64, String> {
+    let mut r = PbReader::new(data);
+    let mut num_blocks = 0u64;
+    loop {
+        if r.pos >= data.len() {
+            break;
+        }
+        let (field, wire) = r.tag()?;
+        match (field, wire) {
+            (2, 0) => num_blocks = r.varint()?,
+            (1, 0) => {
+                r.varint()?;
+            }
+            (_, 0) => {
+                r.varint()?;
+            }
+            (_, 1) => {
+                r.bytes(8)?;
+            }
+            (_, 2) => {
+                let len = r.varint()? as usize;
+                r.bytes(len)?;
+            }
+            (_, 5) => {
+                r.bytes(4)?;
+            }
+            _ => return Err("unsupported wire type".to_string()),
+        }
+    }
+    Ok(num_blocks)
+}
+
+// ---------- Payload reader (seekable, range-backed) ----------
+
+struct PayloadReader {
+    client: Client,
+    url: String,
+    base: u64,
+    size: u64,
+    pos: u64,
+    cache: HashMap<u64, Vec<u8>>,
+}
+
+impl PayloadReader {
+    fn new(client: Client, url: String, base: u64, size: u64) -> Self {
+        Self {
+            client,
+            url,
+            base,
+            size,
+            pos: 0,
+            cache: HashMap::new(),
+        }
+    }
+    fn chunk(&mut self, key: u64) -> Result<Vec<u8>, String> {
+        if let Some(d) = self.cache.get(&key) {
+            return Ok(d.clone());
+        }
+        let start = key * READAHEAD;
+        let end = ((start + READAHEAD).min(self.size)) - 1;
+        let data = fetch_range(&self.client, &self.url, self.base + start, self.base + end)?;
+        self.cache.insert(key, data.clone());
+        Ok(data)
+    }
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, String> {
+        if self.pos >= self.size {
+            return Ok(0);
+        }
+        let n = buf.len().min((self.size - self.pos) as usize);
+        let mut written = 0usize;
+        while written < n {
+            let key = self.pos / READAHEAD;
+            let off = (self.pos % READAHEAD) as usize;
+            let data = self.chunk(key)?;
+            let take = (n - written).min(data.len().saturating_sub(off));
+            if take == 0 {
+                break;
+            }
+            buf[written..written + take].copy_from_slice(&data[off..off + take]);
+            self.pos += take as u64;
+            written += take;
+        }
+        Ok(written)
+    }
+}
+
+fn decompress_xz(data: &[u8]) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    lzma_rs::xz_decompress(&mut std::io::Cursor::new(data), &mut out)
+        .map_err(|e| format!("xz decompress failed: {e}"))?;
+    Ok(out)
+}
+
+fn decompress_bz2(data: &[u8]) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    let mut dec = bzip2_rs::DecoderReader::new(std::io::Cursor::new(data));
+    dec.read_to_end(&mut out)
+        .map_err(|e| format!("bz2 decompress failed: {e}"))?;
+    Ok(out)
+}
+
+fn read_manifest(reader: &mut PayloadReader) -> Result<Vec<Partition>, String> {
+    reader.pos = 0;
+    let mut head = [0u8; 24];
+    reader.read(&mut head)?;
+    if &head[0..4] != b"CrAU" {
+        return Err("invalid payload magic".to_string());
+    }
+    let version = u64::from_be_bytes(head[4..12].try_into().unwrap());
+    let manifest_len = u64::from_be_bytes(head[12..20].try_into().unwrap());
+    if version != 2 {
+        return Err(format!("unsupported payload version ({version})"));
+    }
+    let mut manifest_raw = vec![0u8; manifest_len as usize];
+    reader.read(&mut manifest_raw)?;
+    parse_manifest(&manifest_raw)
+}
+
+// ---------- Public API ----------
+
+pub fn list_partitions(url: &str) -> Result<Vec<PartitionInfo>, String> {
+    let c = client();
+    let mut urls = Vec::new();
+    let m = mirror_url(url);
+    if m != url {
+        urls.push(m);
+    }
+    urls.push(url.to_string());
+
+    let mut last_err = String::from("no candidates");
+    for u in &urls {
+        match locate_payload(&c, u) {
+            Ok((base, size)) => {
+                let mut reader = PayloadReader::new(c.clone(), u.clone(), base, size);
+                match read_manifest(&mut reader) {
+                    Ok(parts) => {
+                        let infos = parts
+                            .iter()
+                            .map(|p| {
+                                let bytes = p
+                                    .operations
+                                    .iter()
+                                    .map(|o| o.dst_blocks * BLOCK_SIZE)
+                                    .sum();
+                                PartitionInfo {
+                                    name: p.name.clone(),
+                                    size_bytes: bytes,
+                                }
+                            })
+                            .collect();
+                        return Ok(infos);
+                    }
+                    Err(e) => last_err = e,
+                }
+            }
+            Err(e) => last_err = e,
+        }
+    }
+    Err(format!("cannot open OTA: {last_err}"))
+}
+
+pub fn extract_partition(
+    url: &str,
+    partition_name: &str,
+    output_path: &str,
+) -> Result<String, String> {
+    let c = client();
+    let mut urls = Vec::new();
+    let m = mirror_url(url);
+    if m != url {
+        urls.push(m);
+    }
+    urls.push(url.to_string());
+
+    let mut last_err = String::from("no candidates");
+    for u in &urls {
+        match locate_payload(&c, u) {
+            Ok((base, size)) => {
+                let mut reader = PayloadReader::new(c.clone(), u.clone(), base, size);
+                match read_manifest(&mut reader) {
+                    Ok(parts) => {
+                        let partition = parts
+                            .iter()
+                            .find(|p| p.name == partition_name)
+                            .ok_or_else(|| format!("Partition \"{partition_name}\" not found in OTA"))?;
+                        return write_partition(&mut reader, partition, output_path)
+                            .map(|_| format!("{partition_name}.img saved"));
+                    }
+                    Err(e) => last_err = e,
+                }
+            }
+            Err(e) => last_err = e,
+        }
+    }
+    Err(format!("cannot open OTA: {last_err}"))
+}
+
+fn write_partition(
+    reader: &mut PayloadReader,
+    partition: &Partition,
+    output_path: &str,
+) -> Result<(), String> {
+    let out = std::path::Path::new(output_path);
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let mut out_f = std::fs::File::create(out).map_err(|e| e.to_string())?;
+
+    for op in &partition.operations {
+        let block_count = op.dst_blocks * BLOCK_SIZE;
+        match op.op_type {
+            0 => {
+                reader.pos = op.data_offset;
+                let mut buf = vec![0u8; 8192];
+                let mut written_total = 0u64;
+                while written_total < block_count {
+                    let need = ((block_count - written_total) as usize).min(buf.len());
+                    let n = reader.read(&mut buf[..need])?;
+                    if n == 0 {
+                        break;
+                    }
+                    out_f.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+                    written_total += n as u64;
+                }
+            }
+            1 => {
+                let data = read_op_data(reader, op.data_offset, op.data_length)?;
+                let decomp = decompress_xz(&data)?;
+                out_f.write_all(&decomp).map_err(|e| e.to_string())?;
+            }
+            2 => {
+                let data = read_op_data(reader, op.data_offset, op.data_length)?;
+                let decomp = decompress_bz2(&data)?;
+                out_f.write_all(&decomp).map_err(|e| e.to_string())?;
+            }
+            7 => {
+                let zeros = vec![0u8; block_count as usize];
+                out_f.write_all(&zeros).map_err(|e| e.to_string())?;
+            }
+            other => {
+                return Err(format!(
+                    "unhandled operation type ({other}). Only REPLACE / XZ / BZ / ZERO supported"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn read_op_data(reader: &mut PayloadReader, offset: u64, length: u64) -> Result<Vec<u8>, String> {
+    reader.pos = offset;
+    let mut buf = vec![0u8; length as usize];
+    let mut done = 0usize;
+    while done < buf.len() {
+        let n = reader.read(&mut buf[done..])?;
+        if n == 0 {
+            break;
+        }
+        done += n;
+    }
+    Ok(buf)
+}
+
+// ---------- Fastboot .tgz streaming extraction ----------
+
+fn tar_parse_int(b: &[u8]) -> u64 {
+    let b = b.split(|&x| x == 0).next().unwrap_or(b);
+    let s = std::str::from_utf8(b).unwrap_or("0").trim();
+    if s.is_empty() {
+        return 0;
+    }
+    u64::from_str_radix(s, 8).unwrap_or(0)
+}
+
+pub fn extract_from_tgz(
+    url: &str,
+    image_name: &str,
+    output_path: &str,
+) -> Result<String, String> {
+    let name = if image_name.ends_with(".img") {
+        image_name.to_string()
+    } else {
+        format!("{image_name}.img")
+    };
+
+    let c = client();
+    let resp = c
+        .get(url)
+        .send()
+        .map_err(|e| format!("download failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("download failed: HTTP {}", resp.status()));
+    }
+
+    let mut dec = GzDecoder::new(resp);
+    let mut found = false;
+
+    let out = std::path::Path::new(output_path);
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let mut out_f = std::fs::File::create(out).map_err(|e| e.to_string())?;
+
+    loop {
+        let mut header = [0u8; 512];
+        if !read_exact(&mut dec, &mut header)? {
+            break;
+        }
+        let h_name = header[0..100]
+            .split(|&x| x == 0)
+            .next()
+            .unwrap_or(&header[0..100]);
+        let h_name = String::from_utf8_lossy(h_name).to_string();
+        let size = tar_parse_int(&header[124..136]);
+        let typeflag = header[156];
+        let padded = (size + 511) / 512 * 512;
+
+        if typeflag != b'0' && typeflag != 0 {
+            skip_bytes(&mut dec, padded)?;
+            continue;
+        }
+        if h_name == name {
+            let mut remaining = size;
+            let mut chunk = vec![0u8; 1 << 16];
+            while remaining > 0 {
+                let need = remaining.min(chunk.len() as u64) as usize;
+                let n = read_exact_chunk(&mut dec, &mut chunk[..need])?;
+                if n == 0 {
+                    break;
+                }
+                out_f.write_all(&chunk[..n]).map_err(|e| e.to_string())?;
+                remaining -= n as u64;
+            }
+            skip_bytes(&mut dec, padded - size)?;
+            found = true;
+            break;
+        } else {
+            skip_bytes(&mut dec, padded)?;
+        }
+    }
+
+    if !found {
+        let _ = std::fs::remove_file(out);
+        return Err(format!("Image \"{name}\" not found in fastboot archive"));
+    }
+    Ok(format!("{name} saved"))
+}
+
+fn read_exact(r: &mut impl std::io::Read, buf: &mut [u8]) -> Result<bool, String> {
+    let mut done = 0usize;
+    while done < buf.len() {
+        let n = r.read(&mut buf[done..]).map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Ok(done > 0);
+        }
+        done += n;
+    }
+    Ok(true)
+}
+
+fn read_exact_chunk(r: &mut impl std::io::Read, buf: &mut [u8]) -> Result<usize, String> {
+    let mut done = 0usize;
+    while done < buf.len() {
+        let n = r.read(&mut buf[done..]).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        done += n;
+    }
+    Ok(done)
+}
+
+fn skip_bytes(r: &mut impl std::io::Read, mut n: u64) -> Result<(), String> {
+    let mut skip = vec![0u8; 1 << 16];
+    while n > 0 {
+        let step = n.min(skip.len() as u64) as usize;
+        let read = read_exact_chunk(r, &mut skip[..step])?;
+        if read == 0 {
+            return Err("unexpected end of archive".to_string());
+        }
+        n -= read as u64;
+    }
+    Ok(())
+}

@@ -24,6 +24,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_hwid,
             commands::get_device_model,
+            commands::ota_list_partitions,
+            commands::ota_extract_partition,
+            commands::ota_extract_tgz,
             commands::detect_device,
             commands::mtk_find_port,
             commands::mtk_load_scatter,

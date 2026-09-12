@@ -12,6 +12,41 @@ pub fn get_device_model() -> String {
     crate::services::account::get_device_model()
 }
 
+// ── OTA Commands ─────────────────────────────────────────────
+
+#[command]
+pub async fn ota_list_partitions(url: String) -> Result<Vec<crate::services::ota::PartitionInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::ota::list_partitions(&url))
+        .await
+        .map_err(|e| format!("OTA task failed: {e}"))?
+}
+
+#[command]
+pub async fn ota_extract_partition(
+    url: String,
+    partition: String,
+    output_path: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::ota::extract_partition(&url, &partition, &output_path)
+    })
+    .await
+    .map_err(|e| format!("OTA task failed: {e}"))?
+}
+
+#[command]
+pub async fn ota_extract_tgz(
+    url: String,
+    image_name: String,
+    output_path: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::ota::extract_from_tgz(&url, &image_name, &output_path)
+    })
+    .await
+    .map_err(|e| format!("OTA task failed: {e}"))?
+}
+
 // ── Device Commands ──────────────────────────────────────────
 
 #[command]
