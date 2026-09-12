@@ -211,7 +211,7 @@ fn find_firmware_zip(files: &[RemoteFile]) -> Option<RemoteFile> {
         zips = files.iter().filter(|f| !f.isdir).collect();
     }
     zips.sort_by(|a, b| b.size.cmp(&a.size));
-    zips.first().map(|f| f.clone())
+    zips.first().cloned()
 }
 
 // ---------- Remote ZIP parsing over HTTP Range ----------
