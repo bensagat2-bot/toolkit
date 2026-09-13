@@ -92,10 +92,14 @@ fn adb_prop(serial: &str, prop: &str) -> String {
 
 fn get_fastboot_var(var: &str) -> String {
     let out = fastboot(&["getvar", var], 5000);
+    let needle = format!("{}:", var.to_lowercase());
     for line in out.lines() {
         let lower = line.to_lowercase();
-        if lower.starts_with(&format!("{}:", var.to_lowercase())) {
-            return line.split(':').nth(1).unwrap_or("").trim().to_string();
+        if let Some(idx) = lower.find(&needle) {
+            let val = line[idx + needle.len()..].trim();
+            if !val.is_empty() {
+                return val.to_string();
+            }
         }
     }
     "N/A".into()
@@ -127,14 +131,17 @@ fn check_bootloader_adb(serial: &str) -> String {
 
 fn check_bootloader_fastboot() -> String {
     let out = fastboot(&["getvar", "unlocked"], 5000);
-    let out = out.trim().to_lowercase();
-    if out.contains("yes") {
-        "Unlocked".into()
-    } else if out.contains("no") {
-        "Locked".into()
-    } else {
-        "Unknown".into()
+    let lower = out.to_lowercase();
+    if let Some(val) = lower.split("unlocked:").nth(1) {
+        let v = val.trim_start();
+        if v.starts_with('y') {
+            return "Unlocked".into();
+        }
+        if v.starts_with('n') {
+            return "Locked".into();
+        }
     }
+    "Unknown".into()
 }
 
 fn check_root_adb(serial: &str) -> String {
@@ -160,10 +167,11 @@ fn check_root_adb(serial: &str) -> String {
 pub fn get_device_token() -> Result<String, String> {
     let out = fastboot(&["oem", "get_token"], 15000);
     for line in out.lines() {
-        if line.contains(':') && line.to_lowercase().contains("token") {
-            let val = line.split(':').nth(1).unwrap_or("").trim().to_string();
+        let lower = line.to_lowercase();
+        if let Some(idx) = lower.find("token:") {
+            let val = line[idx + "token:".len()..].trim();
             if !val.is_empty() {
-                return Ok(val);
+                return Ok(val.to_string());
             }
         }
     }
@@ -173,8 +181,12 @@ pub fn get_device_token() -> Result<String, String> {
 pub fn get_device_product() -> Result<String, String> {
     let out = fastboot(&["getvar", "product"], 10000);
     for line in out.lines() {
-        if line.to_lowercase().starts_with("product:") {
-            return Ok(line.split(':').nth(1).unwrap_or("").trim().to_string());
+        let lower = line.to_lowercase();
+        if let Some(idx) = lower.find("product:") {
+            let val = line[idx + "product:".len()..].trim();
+            if !val.is_empty() {
+                return Ok(val.to_string());
+            }
         }
     }
     Err("Could not read device product".into())

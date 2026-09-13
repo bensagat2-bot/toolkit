@@ -26,7 +26,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|_app| {
-            // platform-tools, scrcpy and Unisoc ship as bundle resources next to the exe.
+            // Prune tool caches left behind by older app versions.
+            resources::prune_old_caches();
+            // Legacy layout fallback: tools next to the exe (bundle resources).
             let bundle = resources::bundle_dir();
             services::unisoc::set_resource_dir(bundle.clone());
             services::utils::set_resource_dir(bundle);

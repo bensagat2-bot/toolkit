@@ -41,7 +41,8 @@ jobs:
               '',
               '### Downloads',
               '',
-              '- Windows: `.exe` installer',
+              '- `V1Per-portable.zip` - portable exe, tools embedded, no install needed',
+              '- `*-setup.exe` - NSIS installer with shortcuts + uninstall',
             ].join('\n');
 
             let tagName = `nightly-${stamp}`;
@@ -106,3 +107,15 @@ jobs:
           retryAttempts: 2
           tauriScript: npx tauri
           args: --bundles nsis
+
+      - name: Upload portable exe
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP 'cargo-target\release\v1per-servicing.exe'
+          if (-not (Test-Path $exe)) { Write-Host "portable exe not found: $exe"; exit 1 }
+          $zip = Join-Path $env:RUNNER_TEMP 'V1Per-portable.zip'
+          Compress-Archive -Path $exe -DestinationPath $zip -Force
+          gh release upload "${{ needs.create-release.outputs.tag }}" $zip --clobber
+          Write-Host "uploaded portable zip"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

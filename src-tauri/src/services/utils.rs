@@ -15,6 +15,13 @@ pub fn set_resource_dir(path: PathBuf) {
 // the directory tree, falling back to the extracted cache, then to SDK/common
 // install paths, then to PATH.
 fn find_tool_dir(folder: &str, exe: &str) -> Option<PathBuf> {
+    // Portable layout: tools are embedded in the exe and lazily extracted to
+    // the per-user versioned cache on first use.
+    if let Some(d) = crate::resources::ensure_tool_dir(folder) {
+        if d.join(exe).exists() {
+            return Some(d);
+        }
+    }
     if let Some(d) = RESOURCE_DIR.get() {
         let p = d.join(folder);
         if p.join(exe).exists() {
@@ -110,6 +117,7 @@ fn base_cmd(program: &str) -> Command {
 // back empty - which froze the UI on "waiting for device".
 pub fn run_output(cmd: &mut Command, timeout_ms: u64) -> std::process::Output {
     cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(_) => return default_output(),
@@ -118,8 +126,14 @@ pub fn run_output(cmd: &mut Command, timeout_ms: u64) -> std::process::Output {
         Some(s) => s,
         None => return default_output(),
     };
+    let mut stderr = match child.stderr.take() {
+        Some(s) => s,
+        None => return default_output(),
+    };
+    // fastboot writes getvar values and OKAY/FAILED status to stderr, not
+    // stdout. Both streams are piped and merged so callers see the real output.
     let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
-    let _reader = std::thread::spawn(move || {
+    let _stdout_reader = std::thread::spawn(move || {
         use std::io::Read;
         let mut buf = Vec::new();
         let mut chunk = [0u8; 8192];
@@ -131,6 +145,20 @@ pub fn run_output(cmd: &mut Command, timeout_ms: u64) -> std::process::Output {
             }
         }
         let _ = tx.send(buf);
+    });
+    let (tx2, rx2) = std::sync::mpsc::channel::<Vec<u8>>();
+    let _stderr_reader = std::thread::spawn(move || {
+        use std::io::Read;
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 8192];
+        loop {
+            match stderr.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => buf.extend_from_slice(&chunk[..n]),
+                Err(_) => break,
+            }
+        }
+        let _ = tx2.send(buf);
     });
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
@@ -146,7 +174,11 @@ pub fn run_output(cmd: &mut Command, timeout_ms: u64) -> std::process::Output {
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
 
-    let out_buf = rx.recv().unwrap_or_default();
+    let mut out_buf = rx.recv().unwrap_or_default();
+    let err_buf = rx2.recv().unwrap_or_default();
+    if !err_buf.is_empty() {
+        out_buf.extend_from_slice(&err_buf);
+    }
     let status = child.wait();
     std::process::Output {
         stdout: out_buf,
@@ -460,7 +492,7 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     let apk_url = asset_url(&apk);
     let apk_name = asset_name(&apk);
 
-    emit(&app, "Downloading...");
+    emit(&app, format!("Downloading [{}]...", apk_label).as_str());
     let apk_path = download_file_into(&app, &apk_url, &apk_name, &files_dir)?;
     emit(&app, format!("Downloading [{}]... DONE", apk_label).as_str());
 
@@ -469,7 +501,7 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     if !install.to_lowercase().contains("success") {
         return Err(format!("Install failed: {}", install));
     }
-    emit(&app, "Installing to device... DONE");
+    emit(&app, format!("Installing [{}] on device... DONE", manager_label).as_str());
 
     // FolkPatch can only patch boot.img; KernelSU-Next handles init_boot too.
     if use_folk {
@@ -671,7 +703,7 @@ fn auto_patch_ksud(
     if !ok {
         return Err("Failed to pull patched image.".into());
     }
-    emit(app, format!("Patching [{}].img... DONE", "boot").as_str());
+    emit(app, "Patching boot image... DONE");
     Ok(Some(patched_local.to_string_lossy().into_owned()))
 }
 
@@ -734,7 +766,7 @@ fn auto_patch_folkpatch(app: &AppHandle, serial: &str, work: &Path, image_path: 
     if !ok {
         return Err("Failed to pull patched image.".into());
     }
-    emit(app, "Patching boot.img... DONE");
+    emit(app, "Patching boot image... DONE");
     Ok(Some(patched_local.to_string_lossy().into_owned()))
 }
 

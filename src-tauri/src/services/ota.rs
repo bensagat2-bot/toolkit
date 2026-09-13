@@ -11,8 +11,8 @@ const BLOCK_SIZE: u64 = 4096;
 const PAYLOAD_MEMBER: &str = "payload.bin";
 const READAHEAD: u64 = 8 * 1024 * 1024;
 // Parallel range workers + prefetch count (mirrors ota_extract.py).
-const WORKERS: usize = 6;
-const PREFETCH: u64 = 3;
+const WORKERS: usize = 8;
+const PREFETCH: u64 = 4;
 
 pub fn mirror_url(url: &str) -> String {
     if url.contains("bigota.d.miui.com") || url.contains("ultimateota.d.miui.com") {
@@ -688,7 +688,7 @@ fn write_partition(
             // REPLACE
             0 => {
                 reader.pos = data_offset + op.data_offset;
-                let mut buf = vec![0u8; 8192];
+                let mut buf = vec![0u8; 1 << 20];
                 let mut written_total = 0u64;
                 out_f
                     .seek(SeekFrom::Start(dest_off))

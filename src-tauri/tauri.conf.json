@@ -37,11 +37,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "resources/platform-tools",
-      "resources/scrcpy",
-      "resources/Unisoc"
-    ],
+    "resources": [],
     "windows": {
       "nsis": {
         "installMode": "both",

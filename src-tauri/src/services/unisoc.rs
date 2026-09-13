@@ -93,6 +93,11 @@ fn build_packages() -> HashMap<String, UnisocPackage> {
 }
 
 fn find_unisoc_root() -> Option<PathBuf> {
+    // Portable layout: Unisoc tools are embedded in the exe and lazily
+    // extracted to the per-user cache on first use.
+    if let Some(d) = crate::resources::ensure_tool_dir("Unisoc") {
+        return Some(d);
+    }
     let resource_dir = get_resource_dir();
     // Bundled build: resources land in resource_dir/Unisoc
     let candidate = resource_dir.join("Unisoc");
