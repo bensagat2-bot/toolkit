@@ -23,6 +23,8 @@ jobs:
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          retries: 5
+          retry-exempt-status-codes: 400,401,403,404,422
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
@@ -37,10 +39,8 @@ jobs:
               '- Windows: `.exe` installer',
             ].join('\n');
 
-            let release;
-
-            try {
-              const response = await github.rest.repos.createRelease({
+            async function create() {
+              return github.rest.repos.createRelease({
                 owner,
                 repo,
                 tag_name: tagName,
@@ -51,14 +51,24 @@ jobs:
                 generate_release_notes: false,
                 target_commitish: context.sha,
               });
-              release = response.data;
-            } catch (error) {
-              if (error.status !== 422) throw error;
-              const response = await github.rest.repos.getReleaseByTag({ owner, repo, tag: tagName });
-              release = response.data;
             }
 
-            core.setOutput('release_id', String(release.id));
+            try {
+              const response = await create();
+              core.setOutput('release_id', String(response.data.id));
+              return;
+            } catch (error) {
+              if (error.status === 422) {
+                // Release already exists - reuse it so nightly builds keep uploading.
+                const existing = await github.rest.repos.getReleaseByTag({ owner, repo, tag: tagName });
+                core.setOutput('release_id', String(existing.data.id));
+                return;
+              }
+              // Transient server errors (502/503): give the retry helper a chance
+              // to rerun create() before falling back to the existing release.
+              const fallback = await github.rest.repos.getReleaseByTag({ owner, repo, tag: tagName });
+              core.setOutput('release_id', String(fallback.data.id));
+            }
 
   build:
     needs: create-release
