@@ -684,7 +684,7 @@ fn flash_patched(app: &AppHandle, serial: &str, partition: &str, patched_local: 
             break;
         }
     }
-    let fb_serial = fb_serial.ok_or("Fastboot device not detected.")?;
+    let mut fb_serial = fb_serial.ok_or("Fastboot device not detected.")?;
     emit(app, "Device detected in fastboot mode");
 
     emit(app, "Checking bootloader status...");
