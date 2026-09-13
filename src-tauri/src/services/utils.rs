@@ -119,7 +119,7 @@ pub fn run_output(cmd: &mut Command, timeout_ms: u64) -> std::process::Output {
         None => return default_output(),
     };
     let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
-    let reader = std::thread::spawn(move || {
+    let _reader = std::thread::spawn(move || {
         use std::io::Read;
         let mut buf = Vec::new();
         let mut chunk = [0u8; 8192];

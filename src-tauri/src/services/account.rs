@@ -1,7 +1,7 @@
 use std::process::Command;
 use std::sync::OnceLock;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 fn run_cmd(program: &str, args: &[&str]) -> String {
     let mut cmd = Command::new(program);
@@ -18,7 +18,7 @@ fn run_cmd(program: &str, args: &[&str]) -> String {
 
 // Full PC fingerprint reported on register/login so the admin panel can show
 // where an account is used. Field names match what the backend stores.
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PcInfo {
     pub machine_guid: String,
     pub disk_serial: String,

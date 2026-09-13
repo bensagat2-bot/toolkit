@@ -360,9 +360,9 @@ fn parse_extent(data: &[u8]) -> Result<(u64, u64), String> {
 struct PayloadReader {
     size: u64,
     pos: u64,
-    cache: Mutex<HashMap<u64, Arc<Vec<u8>>>>,
-    inflight: Mutex<HashSet<u64>>,
-    errors: Mutex<HashMap<u64, String>>,
+    cache: Arc<Mutex<HashMap<u64, Arc<Vec<u8>>>>>,
+    inflight: Arc<Mutex<HashSet<u64>>>,
+    errors: Arc<Mutex<HashMap<u64, String>>>,
     job_tx: mpsc::Sender<u64>,
     _workers: Vec<std::thread::JoinHandle<()>>,
 }
@@ -371,9 +371,10 @@ impl PayloadReader {
     fn new(client: Arc<Client>, url: String, base: u64, size: u64) -> Self {
         let (job_tx, job_rx) = mpsc::channel::<u64>();
         let (res_tx, res_rx) = mpsc::channel::<(u64, Result<Vec<u8>, String>)>();
-        let cache: Mutex<HashMap<u64, Arc<Vec<u8>>>> = Mutex::new(HashMap::new());
-        let inflight: Mutex<HashSet<u64>> = Mutex::new(HashSet::new());
-        let errors: Mutex<HashMap<u64, String>> = Mutex::new(HashMap::new());
+        let cache: Arc<Mutex<HashMap<u64, Arc<Vec<u8>>>>> = Arc::new(Mutex::new(HashMap::new()));
+        let inflight: Arc<Mutex<HashSet<u64>>> = Arc::new(Mutex::new(HashSet::new()));
+        let errors: Arc<Mutex<HashMap<u64, String>>> = Arc::new(Mutex::new(HashMap::new()));
+        let job_rx = Arc::new(Mutex::new(job_rx));
 
         let _workers: Vec<_> = (0..WORKERS)
             .map(|_| {
@@ -383,7 +384,7 @@ impl PayloadReader {
                 let job_rx = job_rx.clone();
                 let res_tx = res_tx.clone();
                 std::thread::spawn(move || {
-                    while let Ok(key) = job_rx.recv() {
+                    while let Ok(key) = job_rx.lock().unwrap().recv() {
                         let start = key * READAHEAD;
                         let end = ((start + READAHEAD).min(size)) - 1;
                         let res = fetch_range(&client, &url, base + start, base + end);
