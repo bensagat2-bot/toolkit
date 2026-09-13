@@ -7,9 +7,15 @@ mod services;
 // app exits so an upgrade/reinstall can overwrite them without file-lock errors.
 fn kill_locked_tools() {
     for exe in ["adb.exe", "fastboot.exe", "scrcpy.exe", "spd_dump.exe"] {
-        let _ = std::process::Command::new("taskkill")
-            .args(["/F", "/IM", exe])
-            .status();
+        let mut cmd = std::process::Command::new("taskkill");
+        cmd.args(["/F", "/IM", exe]);
+        #[cfg(windows)]
+        {
+            // No console window - taskkill is a console app and would flash.
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+        let _ = cmd.status();
     }
 }
 

@@ -80,8 +80,9 @@ export const useAccountStore = defineStore('account', () => {
     }
   }
 
-  // Server-side account status (banned/suspended/revoked). Called on startup;
-  // never force-logs-out, it only shows the banned/revoked screen.
+  // Server-side account status (banned/suspended/revoked) + live credit sync.
+  // Called on startup and on a timer so admin-added credits show up without
+  // requiring a re-login. Never force-logs-out, it only shows the banned screen.
   async function checkStatus() {
     if (!account.value?.hwid) return
     try {
@@ -95,6 +96,10 @@ export const useAccountStore = defineStore('account', () => {
         if (me?.status === 'banned') banned.value = 'Your account has been banned.'
         else if (me?.status === 'suspended') banned.value = 'Your account has been suspended.'
         else banned.value = null
+        if (typeof me?.credits === 'number' && account.value) {
+          account.value.credits = me.credits
+          persist()
+        }
         return
       }
       const res = await fetch(`${API_BASE}/api/auth/status?hwid=${encodeURIComponent(account.value.hwid)}`)

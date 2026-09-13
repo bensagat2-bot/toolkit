@@ -290,9 +290,14 @@ let refreshTimer = null
 
 onMounted(() => {
   credits.value = store.account?.credits ?? 0
+  store.checkStatus().then(() => {
+    credits.value = store.account?.credits ?? 0
+  })
   fetchFirmwares()
   refreshTimer = setInterval(() => {
-    credits.value = store.account?.credits ?? 0
+    store.checkStatus().then(() => {
+      credits.value = store.account?.credits ?? 0
+    })
     fetchFirmwares()
   }, 10000)
 })
