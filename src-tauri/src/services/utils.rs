@@ -236,13 +236,23 @@ pub(crate) fn detect_mode() -> (String, Option<String>) {
     ("none".into(), None)
 }
 
+/// Detects whether a path exists on the device (via su).
+pub(crate) fn device_path_exists(serial: &str, path: &str) -> bool {
+    let out = adb_serial(serial, &["shell", "su", "-c", &format!("test -e {path} && echo YES")], 8000);
+    out.contains("YES")
+}
+
 /// Dumps a raw block device (e.g. a partition) from the device to a local file.
 /// dd writes to an on-device temp file, then `adb pull` brings it over. This is
 /// binary-safe on every su implementation, unlike `adb exec-out su -c dd`
 /// which silently produced 0-byte files on several devices. Returns bytes written.
 pub(crate) fn dump_partition(serial: &str, src: &str, dest: &std::path::Path) -> Result<u64, String> {
     const REMOTE: &str = "/data/local/tmp/v1per_part.img";
-    adb_serial(serial, &["shell", "su", "-c", &format!("rm -f {REMOTE}")], 10000);
+    let cleanup = || {
+        let _ = adb_serial(serial, &["shell", "su", "-c", &format!("rm -f {REMOTE}")], 10000);
+    };
+
+    cleanup();
     let dump = adb_serial(
         serial,
         &["shell", "su", "-c", &format!("dd if={src} of={REMOTE} bs=1M 2>/dev/null && sync")],
@@ -253,6 +263,7 @@ pub(crate) fn dump_partition(serial: &str, src: &str, dest: &std::path::Path) ->
         && !dump.to_lowercase().contains("denied")
         && !dump.to_lowercase().contains("not found");
     if !ok {
+        cleanup();
         return Err(format!("dd failed: {dump}").trim().to_string());
     }
 
@@ -261,7 +272,8 @@ pub(crate) fn dump_partition(serial: &str, src: &str, dest: &std::path::Path) ->
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
     let out = run_output(&mut cmd, 600000);
-    let _ = adb_serial(serial, &["shell", "su", "-c", &format!("rm -f {REMOTE}")], 10000);
+    // Always remove the temp file from the device so storage is not eaten up.
+    cleanup();
 
     if out.status.success() {
         fs::metadata(dest).map(|m| m.len()).map_err(|e| format!("Failed to stat output: {e}"))
@@ -568,6 +580,26 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
         return Err("Auto-patch failed.".into());
     };
     emit(&app, format!("Patching complete: {}", patched_local).as_str());
+
+    // Remove the helper binaries and images we pushed to the device. The
+    // patched image is already pulled to the PC, so nothing on the phone is
+    // needed for the fastboot flash.
+    emit(&app, "Cleaning up...");
+    let remote_junk = [
+        "/data/local/tmp/ksud",
+        "/data/local/tmp/kptools",
+        "/data/local/tmp/kpimg-android",
+        "/data/local/tmp/v1per_kp",
+        "/data/local/tmp/v1per_input.img",
+        "/data/local/tmp/v1per_part.img",
+        "/sdcard/Download/v1per_input.img",
+        "/sdcard/Download/kernelsu_patched.img",
+        "/sdcard/Download/folkpatch_patched.img",
+    ];
+    for path in remote_junk {
+        let _ = adb_serial(&serial, &["shell", "rm", "-rf", path], 10000);
+    }
+    emit(&app, "Cleaning up... DONE");
 
     flash_patched(&app, &serial, part_name, &patched_local)?;
 

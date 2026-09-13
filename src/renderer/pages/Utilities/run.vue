@@ -27,8 +27,10 @@ import { useRouter } from 'vue-router'
 import { sendIpcToMain, rendererOn } from '@renderer/utils/ipc'
 import { useUtilsRunStore } from './runStore'
 import { createRunLog } from '@renderer/utils/runLog'
+import { useOperationStore } from '@renderer/store/operationStore'
 
 const router = useRouter()
+const opStore = useOperationStore()
 const { pending } = useUtilsRunStore()
 const { logLines, queueLog, addLog, clear: clearLog, stop: stopLog } = createRunLog()
 const busy = ref(false)
@@ -62,6 +64,7 @@ async function runJob() {
     return
   }
   busy.value = true
+  opStore.setBusy(true)
   elapsed.value = 0
   elapsedTimer = setInterval(() => { elapsed.value += 1 }, 1000)
   try {
@@ -82,6 +85,7 @@ async function runJob() {
     clearInterval(elapsedTimer)
     elapsedTimer = null
     busy.value = false
+    opStore.setBusy(false)
   }
 }
 
@@ -98,6 +102,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (elapsedTimer) clearInterval(elapsedTimer)
   stopLog()
+  opStore.setBusy(false)
 })
 </script>
 

@@ -219,57 +219,100 @@ fn run_backup(app: &AppHandle, name: &str) -> Result<(String, Vec<PartitionFile>
 
     let serial = serial.ok_or("Device serial missing.")?;
 
-    if mode == "adb" {
-        emit(app, "Checking root access...");
-        let id = utils::adb_serial(&serial, &["shell", "su", "-c", "id"], 8000);
-        if !id.contains("uid=0") {
-            emit(app, "Checking root access... NOT FOUND");
-            return Err("Root access not granted. The device must be rooted and su must grant permission.".into());
-        }
-        emit(app, "Checking root access... FOUND");
-
-        let model = utils::device_prop(&serial, "ro.product.model");
-        emit(app, &format!("Device: {}", model));
-
-        emit(app, "Checking boot slot...");
-        let slot = utils::device_prop(&serial, "ro.boot.slot_suffix");
-        emit(app, &format!("Checking boot slot... {slot}"));
-
-        let partitions = utils::adb_serial(
-            &serial,
-            &["shell", "su", "-c", "ls /dev/block/by-name/"],
-            10000,
-        );
-        let names: Vec<String> = partitions
-            .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|l| !l.is_empty() && !l.contains('/'))
-            .collect();
-        if names.is_empty() {
-            return Err("No partitions found under /dev/block/by-name/.".into());
-        }
-        emit(app, &format!("Found {} partitions.", names.len()));
-
-        let mut files = Vec::new();
-        let dest_dir = card_dir(name);
-        for part in &names {
-            emit(app, &format!("Backing up partition {}...", part));
-            // Names come straight from /dev/block/by-name/ and already include
-            // the slot suffix on A/B devices, so never append {slot} here.
-            let src = format!("/dev/block/by-name/{part}");
-            let dest = dest_dir.join(format!("{part}.img"));
-            match utils::dump_partition(&serial, &src, &dest) {
-                Ok(size) => {
-                    emit(app, &format!("Backing up partition {}... DONE", part));
-                    files.push(PartitionFile { name: format!("{part}.img"), size });
-                }
-                Err(e) => emit(app, &format!("Backing up partition {}... SKIPPED ({e})", part)),
-            }
-        }
-        emit(app, &format!("Elapsed Time: {}s", started.elapsed().as_secs()).as_str());
-        Ok((model, files))
-    } else {
+    if mode != "adb" {
         emit(app, "Fastboot mode does not support raw partition dump over fastboot. Boot to system with root and retry.");
-        Err("Partition backup requires ADB + root. Fastboot mode cannot dump partitions.".into())
+        return Err("Partition backup requires ADB + root. Fastboot mode cannot dump partitions.".into());
     }
+
+    emit(app, "Checking root access...");
+    let id = utils::adb_serial(&serial, &["shell", "su", "-c", "id"], 8000);
+    if !id.contains("uid=0") {
+        emit(app, "Checking root access... NOT FOUND");
+        return Err("Root access not granted. The device must be rooted and su must grant permission.".into());
+    }
+    emit(app, "Checking root access... FOUND");
+
+    let model = utils::device_prop(&serial, "ro.product.model");
+    emit(app, &format!("Device: {}", model));
+
+    emit(app, "Checking boot slot...");
+    let slot = utils::device_prop(&serial, "ro.boot.slot_suffix");
+    emit(app, &format!("Checking boot slot... {slot}"));
+
+    // Mirror Partition_Backup.sh: only the firmware + super + logical partitions
+    // that matter. Backing up every /dev/block/by-name entry (userdata, sdc,
+    // metadata...) hangs on huge/volatile partitions and stalls the device.
+    let firmware_parts = [
+        "boot", "dtbo", "vendor_boot", "dpm", "gz", "lk", "logo", "mcupm",
+        "md1img", "pi_img", "preloader_raw", "scp", "spmfw", "sspm", "tee",
+        "tkv", "vbmeta",
+    ];
+    let logical_parts = [
+        "system", "vendor", "product", "system_ext", "vendor_dlkm", "odm_dlkm",
+    ];
+
+    let mut files = Vec::new();
+    let dest_dir = card_dir(name);
+
+    for part in firmware_parts {
+        // Try slotted then plain name, exactly like the shell script.
+        let src = format!("/dev/block/by-name/{part}{slot}");
+        backup_one(app, &serial, &src, &part, &dest_dir, &mut files)?;
+    }
+
+    // super is usually unslotted; check both names like the script.
+    let super_path = if utils::device_path_exists(&serial, "/dev/block/by-name/super") {
+        "/dev/block/by-name/super".to_string()
+    } else if utils::device_path_exists(&serial, &format!("/dev/block/by-name/super{slot}")) {
+        format!("/dev/block/by-name/super{slot}")
+    } else {
+        String::new()
+    };
+    if !super_path.is_empty() {
+        backup_one(app, &serial, &super_path, "super", &dest_dir, &mut files)?;
+    } else {
+        emit(app, "Super partition not found, skipping...");
+    }
+
+    for part in logical_parts {
+        // Logical partitions live under the dynamic mapper.
+        let src = if utils::device_path_exists(&serial, &format!("/dev/block/mapper/{part}{slot}")) {
+            format!("/dev/block/mapper/{part}{slot}")
+        } else if utils::device_path_exists(&serial, &format!("/dev/block/mapper/{part}")) {
+            format!("/dev/block/mapper/{part}")
+        } else if utils::device_path_exists(&serial, &format!("/dev/block/by-name/{part}{slot}")) {
+            format!("/dev/block/by-name/{part}{slot}")
+        } else {
+            emit(app, &format!("Logical partition {part} not found, skipping..."));
+            continue;
+        };
+        backup_one(app, &serial, &src, part, &dest_dir, &mut files)?;
+    }
+
+    emit(app, &format!("Elapsed Time: {}s", started.elapsed().as_secs()).as_str());
+    Ok((model, files))
+}
+
+fn backup_one(
+    app: &AppHandle,
+    serial: &str,
+    src: &str,
+    part: &str,
+    dest_dir: &std::path::Path,
+    files: &mut Vec<PartitionFile>,
+) -> Result<(), String> {
+    if !utils::device_path_exists(serial, src) {
+        emit(app, &format!("Partition {part} not found, skipping..."));
+        return Ok(());
+    }
+    emit(app, &format!("Backing up partition {}...", part));
+    let dest = dest_dir.join(format!("{part}.img"));
+    match utils::dump_partition(serial, src, &dest) {
+        Ok(size) => {
+            emit(app, &format!("Backing up partition {}... DONE", part));
+            files.push(PartitionFile { name: format!("{part}.img"), size });
+        }
+        Err(e) => emit(app, &format!("Backing up partition {}... SKIPPED ({e})", part)),
+    }
+    Ok(())
 }

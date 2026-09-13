@@ -15,11 +15,17 @@
       </main>
       <PlayBar id="player" />
     </div>
+    <div v-if="opBusy" class="op-overlay">
+      <div class="op-overlay-card">
+        <div class="spinner"></div>
+        <span>Operation in progress... please wait</span>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import Splash from '@/components/layout/Splash.vue'
 import Aside from '@/components/layout/Aside.vue'
 import Toolbar from '@/components/layout/Toolbar.vue'
@@ -27,8 +33,11 @@ import PlayBar from '@/components/layout/PlayBar.vue'
 import AuthPage from '@/pages/Auth/index.vue'
 import Banned from '@/pages/Auth/Banned.vue'
 import { useAccountStore } from '@/store/accountStore'
+import { useOperationStore } from '@/store/operationStore'
 
 const store = useAccountStore()
+const opStore = useOperationStore()
+const opBusy = computed(() => opStore.busy)
 
 onMounted(() => {
   store.init()
@@ -96,5 +105,43 @@ onMounted(() => {
 .page-leave-to {
   opacity: 0;
   transform: translateY(-6px);
+}
+
+.op-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.op-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 28px;
+  border-radius: 10px;
+  background: var(--color-main-background);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+  font-size: 13px;
+  color: var(--color-font);
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--color-primary-light-300);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
