@@ -17,18 +17,23 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.publish-release.outputs.release_id }}
+      tag: ${{ steps.publish-release.outputs.tag }}
     steps:
-      - name: Create or reuse nightly release
+      - name: Create per-build release
         id: publish-release
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           retries: 5
-          retry-exempt-status-codes: 400,401,403,404,422
+          retry-exempt-status-codes: 400,401,403,404,409,422
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const tagName = 'nightly';
+
+            const start = new Date(context.run.start_time);
+            const pad = (n) => String(n).padStart(2, '0');
+            const stamp = `${start.getUTCFullYear()}.${pad(start.getUTCMonth() + 1)}.${pad(start.getUTCDate())}-${pad(start.getUTCHours())}${pad(start.getUTCMinutes())}${pad(start.getUTCSeconds())}`;
+
             const releaseBody = [
               '## V1Per Servicing Toolkit nightly',
               '',
@@ -39,36 +44,32 @@ jobs:
               '- Windows: `.exe` installer',
             ].join('\n');
 
-            async function create() {
-              return github.rest.repos.createRelease({
-                owner,
-                repo,
-                tag_name: tagName,
-                name: 'V1Per nightly',
-                body: releaseBody,
-                draft: false,
-                prerelease: false,
-                generate_release_notes: false,
-                target_commitish: context.sha,
-              });
-            }
-
-            try {
-              const response = await create();
-              core.setOutput('release_id', String(response.data.id));
-              return;
-            } catch (error) {
-              if (error.status === 422) {
-                // Release already exists - reuse it so nightly builds keep uploading.
-                const existing = await github.rest.repos.getReleaseByTag({ owner, repo, tag: tagName });
-                core.setOutput('release_id', String(existing.data.id));
-                return;
+            let tagName = `nightly-${stamp}`;
+            let release;
+            for (let attempt = 0; attempt < 5; attempt++) {
+              try {
+                const response = await github.rest.repos.createRelease({
+                  owner,
+                  repo,
+                  tag_name: tagName,
+                  name: `V1Per nightly ${stamp}`,
+                  body: releaseBody,
+                  draft: false,
+                  prerelease: false,
+                  generate_release_notes: false,
+                  target_commitish: context.sha,
+                });
+                release = response.data;
+                break;
+              } catch (error) {
+                if (error.status !== 422) throw error;
+                tagName = `nightly-${stamp}-${attempt + 1}`;
               }
-              // Transient server errors (502/503): give the retry helper a chance
-              // to rerun create() before falling back to the existing release.
-              const fallback = await github.rest.repos.getReleaseByTag({ owner, repo, tag: tagName });
-              core.setOutput('release_id', String(fallback.data.id));
             }
+            if (!release) throw new Error('could not create release');
+
+            core.setOutput('release_id', String(release.id));
+            core.setOutput('tag', tagName);
 
   build:
     needs: create-release
