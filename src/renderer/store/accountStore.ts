@@ -29,6 +29,17 @@ interface UserPayload {
 const STORAGE_KEY = 'v1per_account'
 const API_BASE = 'https://firmwaresss-devices.vercel.app'
 
+interface PcInfo {
+  machine_guid: string
+  disk_serial: string
+  board_serial: string
+  mac: string
+  cpu: string
+  os_version: string
+  ram: string
+  device_model: string
+}
+
 function loadSaved(): AccountInfo | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -107,7 +118,7 @@ export const useAccountStore = defineStore('account', () => {
 
   async function register(username: string, email: string, password: string) {
     const hwid = await sendIpcToMain<string>('get_hwid')
-    const deviceModel = await sendIpcToMain<string>('get_device_model')
+    const pcInfo = await sendIpcToMain<PcInfo>('get_pc_info')
     const res = await fetch(`${API_BASE}/api/users`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -116,7 +127,9 @@ export const useAccountStore = defineStore('account', () => {
         email,
         password,
         hwid,
-        device_model: deviceModel,
+        device_model: pcInfo.device_model || 'Unknown device',
+        machine_guid: pcInfo.machine_guid || undefined,
+        pc_info: pcInfo,
       }),
     })
     const data = await parseJson(res)
@@ -145,10 +158,16 @@ export const useAccountStore = defineStore('account', () => {
 
   async function login(password: string) {
     const hwid = await sendIpcToMain<string>('get_hwid')
+    const pcInfo = await sendIpcToMain<PcInfo>('get_pc_info')
     const res = await fetch(`${API_BASE}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hwid, password }),
+      body: JSON.stringify({
+        hwid,
+        password,
+        machine_guid: pcInfo.machine_guid || undefined,
+        pc_info: pcInfo,
+      }),
     })
     const data = await parseJson(res)
     if (res.status === 403 && data?.error) {

@@ -1,5 +1,6 @@
-use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::collections::{HashMap, HashSet};
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::sync::{mpsc, Arc, Mutex};
 
 use flate2::read::GzDecoder;
 use reqwest::blocking::Client;
@@ -9,6 +10,9 @@ const MIRROR_HOST: &str = "bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.ali
 const BLOCK_SIZE: u64 = 4096;
 const PAYLOAD_MEMBER: &str = "payload.bin";
 const READAHEAD: u64 = 8 * 1024 * 1024;
+// Parallel range workers + prefetch count (mirrors ota_extract.py).
+const WORKERS: usize = 6;
+const PREFETCH: u64 = 3;
 
 pub fn mirror_url(url: &str) -> String {
     if url.contains("bigota.d.miui.com") || url.contains("ultimateota.d.miui.com") {
@@ -187,6 +191,7 @@ struct Operation {
     data_offset: u64,
     data_length: u64,
     dst_blocks: u64,
+    dst_extent_start: u64,
 }
 
 struct Partition {
@@ -272,6 +277,7 @@ fn parse_operation(data: &[u8]) -> Result<Operation, String> {
     let mut data_offset = 0u64;
     let mut data_length = 0u64;
     let mut dst_blocks = 0u64;
+    let mut dst_extent_start = 0u64;
     loop {
         if r.pos >= data.len() {
             break;
@@ -284,7 +290,11 @@ fn parse_operation(data: &[u8]) -> Result<Operation, String> {
             (7, 2) => {
                 let len = r.varint()? as usize;
                 let data = r.bytes(len)?;
-                dst_blocks += parse_extent_blocks(data)?;
+                let (start, blocks) = parse_extent(data)?;
+                if dst_blocks == 0 {
+                    dst_extent_start = start;
+                }
+                dst_blocks += blocks;
             }
             (_, 0) => {
                 r.varint()?;
@@ -307,11 +317,13 @@ fn parse_operation(data: &[u8]) -> Result<Operation, String> {
         data_offset,
         data_length,
         dst_blocks,
+        dst_extent_start,
     })
 }
 
-fn parse_extent_blocks(data: &[u8]) -> Result<u64, String> {
+fn parse_extent(data: &[u8]) -> Result<(u64, u64), String> {
     let mut r = PbReader::new(data);
+    let mut start_block = 0u64;
     let mut num_blocks = 0u64;
     loop {
         if r.pos >= data.len() {
@@ -319,10 +331,8 @@ fn parse_extent_blocks(data: &[u8]) -> Result<u64, String> {
         }
         let (field, wire) = r.tag()?;
         match (field, wire) {
+            (1, 0) => start_block = r.varint()?,
             (2, 0) => num_blocks = r.varint()?,
-            (1, 0) => {
-                r.varint()?;
-            }
             (_, 0) => {
                 r.varint()?;
             }
@@ -339,41 +349,114 @@ fn parse_extent_blocks(data: &[u8]) -> Result<u64, String> {
             _ => return Err("unsupported wire type".to_string()),
         }
     }
-    Ok(num_blocks)
+    Ok((start_block, num_blocks))
 }
 
-// ---------- Payload reader (seekable, range-backed) ----------
+// ---------- Payload reader (seekable, range-backed, parallel) ----------
 
+// Fetches 8MiB chunks in parallel like ota_extract.py. Workers pull chunk keys
+// off a queue; a collector moves results into the cache; reads block only until
+// their own chunk lands (prefetch keeps later chunks streaming).
 struct PayloadReader {
-    client: Client,
-    url: String,
-    base: u64,
     size: u64,
     pos: u64,
-    cache: HashMap<u64, Vec<u8>>,
+    cache: Mutex<HashMap<u64, Arc<Vec<u8>>>>,
+    inflight: Mutex<HashSet<u64>>,
+    errors: Mutex<HashMap<u64, String>>,
+    job_tx: mpsc::Sender<u64>,
+    _workers: Vec<std::thread::JoinHandle<()>>,
 }
 
 impl PayloadReader {
-    fn new(client: Client, url: String, base: u64, size: u64) -> Self {
+    fn new(client: Arc<Client>, url: String, base: u64, size: u64) -> Self {
+        let (job_tx, job_rx) = mpsc::channel::<u64>();
+        let (res_tx, res_rx) = mpsc::channel::<(u64, Result<Vec<u8>, String>)>();
+        let cache: Mutex<HashMap<u64, Arc<Vec<u8>>>> = Mutex::new(HashMap::new());
+        let inflight: Mutex<HashSet<u64>> = Mutex::new(HashSet::new());
+        let errors: Mutex<HashMap<u64, String>> = Mutex::new(HashMap::new());
+
+        let _workers: Vec<_> = (0..WORKERS)
+            .map(|_| {
+                let client = client.clone();
+                let url = url.clone();
+                let base = base;
+                let job_rx = job_rx.clone();
+                let res_tx = res_tx.clone();
+                std::thread::spawn(move || {
+                    while let Ok(key) = job_rx.recv() {
+                        let start = key * READAHEAD;
+                        let end = ((start + READAHEAD).min(size)) - 1;
+                        let res = fetch_range(&client, &url, base + start, base + end);
+                        if res_tx.send((key, res)).is_err() {
+                            break;
+                        }
+                    }
+                })
+            })
+            .collect();
+
+        // Collector thread: moves finished chunk fetches into the cache.
+        {
+            let cache = cache.clone();
+            let inflight = inflight.clone();
+            let errors = errors.clone();
+            std::thread::spawn(move || {
+                while let Ok((key, res)) = res_rx.recv() {
+                    match res {
+                        Ok(data) => {
+                            cache.lock().unwrap().insert(key, Arc::new(data));
+                        }
+                        Err(e) => {
+                            errors.lock().unwrap().insert(key, e);
+                        }
+                    }
+                    inflight.lock().unwrap().remove(&key);
+                }
+            });
+        }
+
         Self {
-            client,
-            url,
-            base,
             size,
             pos: 0,
-            cache: HashMap::new(),
+            cache,
+            inflight,
+            errors,
+            job_tx,
+            _workers,
         }
     }
-    fn chunk(&mut self, key: u64) -> Result<Vec<u8>, String> {
-        if let Some(d) = self.cache.get(&key) {
-            return Ok(d.clone());
+
+    fn chunk(&self, key: u64) -> Result<Arc<Vec<u8>>, String> {
+        if let Some(d) = self.cache.lock().unwrap().get(&key).cloned() {
+            return Ok(d);
         }
-        let start = key * READAHEAD;
-        let end = ((start + READAHEAD).min(self.size)) - 1;
-        let data = fetch_range(&self.client, &self.url, self.base + start, self.base + end)?;
-        self.cache.insert(key, data.clone());
-        Ok(data)
+        {
+            let mut inf = self.inflight.lock().unwrap();
+            if !inf.contains(&key) {
+                inf.insert(key);
+                for k in (key + 1)..(key + 1 + PREFETCH) {
+                    if k * READAHEAD >= self.size {
+                        break;
+                    }
+                    if !inf.contains(&k) {
+                        inf.insert(k);
+                        let _ = self.job_tx.send(k);
+                    }
+                }
+                let _ = self.job_tx.send(key);
+            }
+        }
+        loop {
+            if let Some(d) = self.cache.lock().unwrap().get(&key).cloned() {
+                return Ok(d);
+            }
+            if let Some(e) = self.errors.lock().unwrap().get(&key).cloned() {
+                return Err(e);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
     }
+
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, String> {
         if self.pos >= self.size {
             return Ok(0);
@@ -411,7 +494,7 @@ fn decompress_bz2(data: &[u8]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-fn read_manifest(reader: &mut PayloadReader) -> Result<Vec<Partition>, String> {
+fn read_manifest(reader: &mut PayloadReader) -> Result<(Vec<Partition>, u64), String> {
     reader.pos = 0;
     let mut head = [0u8; 24];
     reader.read(&mut head)?;
@@ -420,18 +503,22 @@ fn read_manifest(reader: &mut PayloadReader) -> Result<Vec<Partition>, String> {
     }
     let version = u64::from_be_bytes(head[4..12].try_into().unwrap());
     let manifest_len = u64::from_be_bytes(head[12..20].try_into().unwrap());
+    let metadata_signature_len = u32::from_be_bytes(head[20..24].try_into().unwrap());
     if version != 2 {
         return Err(format!("unsupported payload version ({version})"));
     }
+    // Data blobs start right after the manifest + metadata signature.
+    let data_offset = 24 + manifest_len + metadata_signature_len as u64;
     let mut manifest_raw = vec![0u8; manifest_len as usize];
     reader.read(&mut manifest_raw)?;
-    parse_manifest(&manifest_raw)
+    parse_manifest(&manifest_raw).map(|parts| (parts, data_offset))
 }
 
 // ---------- Public API ----------
 
 pub fn list_partitions(url: &str) -> Result<Vec<PartitionInfo>, String> {
     let c = client();
+    let c_arc = Arc::new(c.clone());
     let mut urls = Vec::new();
     let m = mirror_url(url);
     if m != url {
@@ -443,9 +530,9 @@ pub fn list_partitions(url: &str) -> Result<Vec<PartitionInfo>, String> {
     for u in &urls {
         match locate_payload(&c, u) {
             Ok((base, size)) => {
-                let mut reader = PayloadReader::new(c.clone(), u.clone(), base, size);
+                let mut reader = PayloadReader::new(c_arc.clone(), u.clone(), base, size);
                 match read_manifest(&mut reader) {
-                    Ok(parts) => {
+                    Ok((parts, _data_offset)) => {
                         let infos = parts
                             .iter()
                             .map(|p| {
@@ -477,6 +564,7 @@ pub fn extract_partition(
     output_path: &str,
 ) -> Result<String, String> {
     let c = client();
+    let c_arc = Arc::new(c.clone());
     let mut urls = Vec::new();
     let m = mirror_url(url);
     if m != url {
@@ -488,14 +576,14 @@ pub fn extract_partition(
     for u in &urls {
         match locate_payload(&c, u) {
             Ok((base, size)) => {
-                let mut reader = PayloadReader::new(c.clone(), u.clone(), base, size);
+                let mut reader = PayloadReader::new(c_arc.clone(), u.clone(), base, size);
                 match read_manifest(&mut reader) {
-                    Ok(parts) => {
+                    Ok((parts, data_offset)) => {
                         let partition = parts
                             .iter()
                             .find(|p| p.name == partition_name)
                             .ok_or_else(|| format!("Partition \"{partition_name}\" not found in OTA"))?;
-                        return write_partition(&mut reader, partition, output_path)
+                        return write_partition(&mut reader, partition, data_offset, output_path)
                             .map(|_| format!("{partition_name}.img saved"));
                     }
                     Err(e) => last_err = e,
@@ -510,6 +598,7 @@ pub fn extract_partition(
 fn write_partition(
     reader: &mut PayloadReader,
     partition: &Partition,
+    data_offset: u64,
     output_path: &str,
 ) -> Result<(), String> {
     let out = std::path::Path::new(output_path);
@@ -520,11 +609,15 @@ fn write_partition(
 
     for op in &partition.operations {
         let block_count = op.dst_blocks * BLOCK_SIZE;
+        let dest_off = op.dst_extent_start * BLOCK_SIZE;
         match op.op_type {
             0 => {
-                reader.pos = op.data_offset;
+                reader.pos = data_offset + op.data_offset;
                 let mut buf = vec![0u8; 8192];
                 let mut written_total = 0u64;
+                out_f
+                    .seek(SeekFrom::Start(dest_off))
+                    .map_err(|e| e.to_string())?;
                 while written_total < block_count {
                     let need = ((block_count - written_total) as usize).min(buf.len());
                     let n = reader.read(&mut buf[..need])?;
@@ -536,17 +629,26 @@ fn write_partition(
                 }
             }
             1 => {
-                let data = read_op_data(reader, op.data_offset, op.data_length)?;
+                let data = read_op_data(reader, data_offset + op.data_offset, op.data_length)?;
                 let decomp = decompress_xz(&data)?;
+                out_f
+                    .seek(SeekFrom::Start(dest_off))
+                    .map_err(|e| e.to_string())?;
                 out_f.write_all(&decomp).map_err(|e| e.to_string())?;
             }
             2 => {
-                let data = read_op_data(reader, op.data_offset, op.data_length)?;
+                let data = read_op_data(reader, data_offset + op.data_offset, op.data_length)?;
                 let decomp = decompress_bz2(&data)?;
+                out_f
+                    .seek(SeekFrom::Start(dest_off))
+                    .map_err(|e| e.to_string())?;
                 out_f.write_all(&decomp).map_err(|e| e.to_string())?;
             }
             7 => {
                 let zeros = vec![0u8; block_count as usize];
+                out_f
+                    .seek(SeekFrom::Start(dest_off))
+                    .map_err(|e| e.to_string())?;
                 out_f.write_all(&zeros).map_err(|e| e.to_string())?;
             }
             other => {

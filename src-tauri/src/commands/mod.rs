@@ -12,6 +12,11 @@ pub fn get_device_model() -> String {
     crate::services::account::get_device_model()
 }
 
+#[command]
+pub fn get_pc_info() -> crate::services::account::PcInfo {
+    crate::services::account::get_pc_info()
+}
+
 // ── OTA Commands ─────────────────────────────────────────────
 
 #[command]

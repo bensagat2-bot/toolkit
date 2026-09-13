@@ -3,6 +3,16 @@ mod protection;
 mod resources;
 mod services;
 
+// Release bundled binaries (adb server, fastboot, scrcpy, spd_dump) when the
+// app exits so an upgrade/reinstall can overwrite them without file-lock errors.
+fn kill_locked_tools() {
+    for exe in ["adb.exe", "fastboot.exe", "scrcpy.exe", "spd_dump.exe"] {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/IM", exe])
+            .status();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     protection::init();
@@ -19,6 +29,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_hwid,
             commands::get_device_model,
+            commands::get_pc_info,
             commands::ota_list_partitions,
             commands::ota_extract_partition,
             commands::ota_extract_tgz,
@@ -78,6 +89,11 @@ pub fn run() {
             commands::xiaomi_run_fastboot,
             commands::xiaomi_run_adb,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                kill_locked_tools();
+            }
+        });
 }
