@@ -254,7 +254,9 @@ fn run_backup(app: &AppHandle, name: &str) -> Result<(String, Vec<PartitionFile>
         let dest_dir = card_dir(name);
         for part in &names {
             emit(app, &format!("Backing up partition {}...", part));
-            let src = format!("/dev/block/by-name/{part}{slot}");
+            // Names come straight from /dev/block/by-name/ and already include
+            // the slot suffix on A/B devices, so never append {slot} here.
+            let src = format!("/dev/block/by-name/{part}");
             let dest = dest_dir.join(format!("{part}.img"));
             match utils::dump_partition(&serial, &src, &dest) {
                 Ok(size) => {

@@ -46,7 +46,11 @@ fn zip_dir(dir: &Path, out: &Path) -> std::io::Result<()> {
 }
 
 fn main() {
-    tauri_build::build();
+    // Require administrator elevation. Windows shows the UAC yes/no prompt and
+    // overlays a shield badge on the exe icon automatically.
+    let attrs = tauri_build::Attributes::new()
+        .windows_attributes(tauri_build::WindowsAttributes::new().app_manifest("app.manifest"));
+    tauri_build::build_attributes(attrs);
 
     // Bundle the three tool folders into encrypted blobs embedded in the
     // binary. They are extracted on demand to %LOCALAPPDATA%\V1Per\tools so

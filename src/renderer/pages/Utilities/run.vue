@@ -67,7 +67,7 @@ async function runJob() {
   try {
     const job = pending.value
     if (job.type === 'root') {
-      await sendIpcToMain('utils_root', { opts: { boot_img: job.boot_img } })
+      await sendIpcToMain('utils_root', { opts: { boot_img: job.boot_img, manager: job.manager } })
     } else if (job.type === 'anykernel') {
       await sendIpcToMain('utils_anykernel', { opts: { zip: job.zip } })
     } else if (job.type === 'force_fastboot') {

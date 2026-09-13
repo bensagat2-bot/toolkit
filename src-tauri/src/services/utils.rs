@@ -236,33 +236,38 @@ pub(crate) fn detect_mode() -> (String, Option<String>) {
     ("none".into(), None)
 }
 
-/// Dumps a raw block device (e.g. a partition) from the device to a local file
-/// via `adb exec-out su -c dd`. Returns bytes written.
+/// Dumps a raw block device (e.g. a partition) from the device to a local file.
+/// dd writes to an on-device temp file, then `adb pull` brings it over. This is
+/// binary-safe on every su implementation, unlike `adb exec-out su -c dd`
+/// which silently produced 0-byte files on several devices. Returns bytes written.
 pub(crate) fn dump_partition(serial: &str, src: &str, dest: &std::path::Path) -> Result<u64, String> {
+    const REMOTE: &str = "/data/local/tmp/v1per_part.img";
+    adb_serial(serial, &["shell", "su", "-c", &format!("rm -f {REMOTE}")], 10000);
+    let dump = adb_serial(
+        serial,
+        &["shell", "su", "-c", &format!("dd if={src} of={REMOTE} bs=1M 2>/dev/null && sync")],
+        600000,
+    );
+    let listed = adb_serial(serial, &["shell", "ls", "-l", REMOTE], 10000);
+    let ok = !listed.to_lowercase().contains("no such")
+        && !dump.to_lowercase().contains("denied")
+        && !dump.to_lowercase().contains("not found");
+    if !ok {
+        return Err(format!("dd failed: {dump}").trim().to_string());
+    }
+
     let mut cmd = base_cmd(&adb_path());
-    cmd.args(["-s", serial, "exec-out", "su", "-c", &format!("dd if={src} bs=1M 2>/dev/null")]);
-    cmd.stdout(std::fs::File::create(dest).map_err(|e| format!("Failed to create file: {e}"))?);
+    cmd.args(["-s", serial, "pull", REMOTE, dest.to_string_lossy().as_ref()]);
+    cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
-    let mut child = cmd.spawn().map_err(|e| format!("Failed to run dd: {e}"))?;
-    let mut stderr = child.stderr.take();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
-    loop {
-        if let Ok(Some(_)) = child.try_wait() {
-            break;
-        }
-        if std::time::Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err("dd timed out after 600s".into());
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
+    let out = run_output(&mut cmd, 600000);
+    let _ = adb_serial(serial, &["shell", "su", "-c", &format!("rm -f {REMOTE}")], 10000);
+
+    if out.status.success() {
+        fs::metadata(dest).map(|m| m.len()).map_err(|e| format!("Failed to stat output: {e}"))
+    } else {
+        Err(String::from_utf8_lossy(&out.stdout).trim().to_string())
     }
-    drop(stderr);
-    let status = child.wait().unwrap_or_default();
-    if !status.success() {
-        return Err(format!("dd exited with status {status}"));
-    }
-    fs::metadata(dest).map(|m| m.len()).map_err(|e| format!("Failed to stat output: {e}"))
 }
 
 fn downloads_dir() -> PathBuf {
@@ -466,17 +471,22 @@ const FOLKPATCH_BANNER: &str = include_str!("../../banner-folkpatch.txt");
 #[derive(Debug, Clone, Deserialize)]
 pub struct RootOptions {
     pub boot_img: String,
+    pub manager: Option<String>,
 }
 
-/// Runs the KernelSU-Next / FolkPatch root pipeline.
-/// Mirrors v1per-wpf Root.cs: detect kernel, pick patch tool, install the
-/// manager, patch the boot image on-device (no root required), flash it.
+/// Runs the KernelSU-Next / FolkPatch root pipeline using the manager selected
+/// in the UI dropdown. The chosen manager's ASCII banner is printed first so
+/// the user knows which root manager will be installed.
 pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     let started = std::time::Instant::now();
     let boot_img = Path::new(&opts.boot_img);
     if !boot_img.exists() {
         return Err(format!("File not found: {}", opts.boot_img));
     }
+
+    // Manager chosen by the user in the dropdown; defaults to KernelSU-Next.
+    let use_folk = opts.manager.as_deref() == Some("folkpatch");
+    emit(&app, if use_folk { FOLKPATCH_BANNER.trim_end() } else { ROOT_BANNER.trim_end() });
 
     emit(&app, "Checking ADB Connection...");
     let serial = match ready_adb_device() {
@@ -514,24 +524,6 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     emit(&app, format!("ro.build.version.sdk : {}", sdk).as_str());
     emit(&app, format!("ro.build.version.release : {}", release).as_str());
     emit(&app, format!("ro.board.platform : {}", platform).as_str());
-
-    let kernel = get_kernel_version(&serial);
-    let use_folk = match uses_folk(&kernel) {
-        Some(true) => {
-            emit(&app, format!("Kernel {} - below 5.10, using FolkPatch", kernel).as_str());
-            true
-        }
-        Some(false) => {
-            emit(&app, format!("Kernel {} - 5.10 or above, using KernelSU-Next", kernel).as_str());
-            false
-        }
-        None => {
-            emit(&app, format!("Could not parse kernel version: {}", kernel).as_str());
-            emit(&app, "Defaulting to KernelSU-Next");
-            false
-        }
-    };
-    emit(&app, if use_folk { FOLKPATCH_BANNER.trim_end() } else { ROOT_BANNER.trim_end() });
 
     let (release_url, manager_label, apk_label, prefer): (&str, &str, &str, &str) = if use_folk {
         emit(&app, "Fetching releases info for FolkPatch... DONE");
@@ -584,34 +576,6 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     let elapsed = started.elapsed().as_secs();
     emit(&app, format!("Elapsed Time: {}s", elapsed).as_str());
     Ok(true)
-}
-
-fn get_kernel_version(serial: &str) -> String {
-    let uname = adb_serial(serial, &["shell", "uname", "-r"], 8000).trim().to_string();
-    if !uname.is_empty() && uname != "N/A" {
-        return uname;
-    }
-    let ver = adb_serial(serial, &["shell", "cat", "/proc/version"], 8000);
-    let ver = ver.trim();
-    if ver.is_empty() {
-        return "N/A".to_string();
-    }
-    // "Linux version 4.14.180-perf+ ..." -> "4.14.180-perf+"
-    if let Some(rest) = ver.split("Linux version ").nth(1) {
-        if let Some(part) = rest.split_whitespace().next() {
-            return part.to_string();
-        }
-    }
-    ver.chars().take(80).collect()
-}
-
-fn uses_folk(kernel: &str) -> Option<bool> {
-    let mut nums = kernel
-        .split(|c: char| !c.is_ascii_digit())
-        .filter_map(|p| p.parse::<u32>().ok());
-    let major = nums.next()?;
-    let minor = nums.next().unwrap_or(0);
-    Some(major < 5 || (major == 5 && minor < 10))
 }
 
 fn partition_from_image(path: &Path) -> &'static str {
@@ -1487,6 +1451,8 @@ pub fn term_run(app: AppHandle, command: &str) -> Result<bool, String> {
 
     let status = child.wait().unwrap_or_default();
     let code = status.code().unwrap_or(-1);
-    emit_term(&app, &format!("[exit code: {code}]"));
+    if code != 0 {
+        emit_term(&app, &format!("[exit code: {code}]"));
+    }
     Ok(true)
 }

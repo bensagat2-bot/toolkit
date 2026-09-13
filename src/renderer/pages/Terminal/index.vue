@@ -139,7 +139,7 @@ const onOutput = (_event, data) => {
   if (!data || typeof data.line !== 'string') return
   const text = data.line
   if (/^\[exit code:/.test(text)) {
-    push('info', text)
+    push('err', text)
   } else if (/error:|failed|not found|unknown|denied/i.test(text)) {
     push('err', text)
   } else {
