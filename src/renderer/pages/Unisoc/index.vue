@@ -2,12 +2,6 @@
   <div class="mtk-page">
     <div class="mtk-header">
       <h2>Unisoc Tools</h2>
-      <div class="header-right">
-        <div class="credits-badge">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg>
-          <span>{{ credits }} credits</span>
-        </div>
-      </div>
     </div>
 
     <div class="mtk-content">
@@ -125,7 +119,6 @@ const packageInstalled = ref({})
 const connWait = ref(300)
 const connBaud = ref('')
 const connBlk = ref('')
-const credits = ref(0)
 const form = reactive({})
 UNISOC_OPS.forEach((op) => { form[opIndex(op)] = reactive({}) })
 const opsGroups = OPS_GROUPS
@@ -206,9 +199,6 @@ onMounted(async () => { packageInstalled.value = await sendIpcToMain('get_packag
 <style scoped>
 .mtk-page { height: 100%; display: flex; flex-direction: column; padding: 16px; gap: 16px; }
 .mtk-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--color-primary-light-500); h2 { font-size: 16px; margin: 0; } }
-.header-right { display: flex; align-items: center; gap: 12px; }
-.credits-badge { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 4px; background: var(--bg-secondary); border: 1px solid var(--border-primary); font-size: 12px; color: var(--accent-primary); font-weight: 600; }
-.credits-badge svg { width: 14px; height: 14px; }
 
 .mtk-content { flex: 1; display: flex; gap: 16px; min-height: 0; }
 .flash-panel { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
