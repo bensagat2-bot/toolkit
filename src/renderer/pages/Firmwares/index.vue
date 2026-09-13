@@ -10,6 +10,8 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
         <input v-model="search" @input="debounceSearch" placeholder="Search device, version..." />
       </div>
+      <span class="last-updated" v-if="lastUpdated">Updated {{ lastUpdated }}</span>
+      <button class="btn btn-sm" @click="fetchFirmwares" :disabled="loading">Refresh</button>
     </div>
 
     <div class="fw-list-wrap scroll">
@@ -28,7 +30,7 @@
                 <div class="fw-model" :title="item.device_name || item.project || 'Unknown'">{{ item.device_name || item.project || 'Unknown' }}</div>
                 <div class="fw-version" :title="item.version">{{ item.version }}</div>
               </div>
-              <span :class="['fw-status', item.has_link ? 'status-ok' : 'status-no']">{{ item.has_link ? 'Available' : 'No link' }}</span>
+              <span :class="['fw-status', item.has_link === false ? 'status-no' : 'status-ok']">{{ item.has_link === false ? 'No link' : 'Available' }}</span>
             </div>
 
             <div class="fw-meta">
@@ -139,7 +141,7 @@
             </div>
           </div>
 
-          <div class="modal-link-section" v-if="!selectedItem.has_link">
+          <div class="modal-link-section" v-if="selectedItem.has_link === false">
             <div class="no-link-msg">No download link available for this firmware.</div>
           </div>
         </div>
@@ -181,6 +183,7 @@ const revealedCode = ref('')
 const errorMsg = ref('')
 const showError = ref(false)
 const showExtract = ref(false)
+const lastUpdated = ref('')
 
 const canExtract = computed(() => {
   const link = revealedLink.value
@@ -226,6 +229,7 @@ async function fetchFirmwares() {
     items.value = data.data || []
     total.value = data.total || 0
     pages.value = data.pages || 1
+    lastUpdated.value = new Date().toLocaleTimeString()
   } catch { items.value = []; total.value = 0; pages.value = 1 }
   loading.value = false
 }
@@ -259,6 +263,7 @@ async function confirmDownload() {
     revealedLink.value = result.link
     revealedCode.value = result.extraction_code || ''
     credits.value = store.account?.credits ?? 0
+    fetchFirmwares()
     setTimeout(() => {
       processingOrder.value = false
       linkRevealed.value = true
@@ -289,7 +294,7 @@ onMounted(() => {
   refreshTimer = setInterval(() => {
     credits.value = store.account?.credits ?? 0
     fetchFirmwares()
-  }, 30000)
+  }, 10000)
 })
 
 onBeforeUnmount(() => {
@@ -307,6 +312,8 @@ onBeforeUnmount(() => {
 .tab.active { background: var(--accent-primary); color: #fff; }
 .tab:hover:not(.active) { background: var(--bg-tertiary); }
 .search-box { flex: 1; display: flex; align-items: center; gap: 8px; max-width: 380px; margin-left: auto; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 4px; padding: 5px 10px; }
+.last-updated { flex: none; font-size: 11px; color: var(--text-secondary); }
+.refresh-btn { flex: none; }
 .search-box svg { width: 14px; height: 14px; color: var(--text-secondary); flex-shrink: 0; }
 .search-box input { flex: 1; min-width: 0; background: none; border: none; outline: none; font-size: 12px; color: var(--text-primary); }
 

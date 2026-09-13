@@ -88,8 +88,8 @@ const onProgress = (_event, data) => {
   queueLog(data.message, String(data.message).endsWith('DONE') ? 'success' : 'info')
 }
 
-onMounted(() => {
-  rendererOn('utils:progress', onProgress)
+onMounted(async () => {
+  await rendererOn('utils:progress', onProgress)
   runDownload()
 })
 

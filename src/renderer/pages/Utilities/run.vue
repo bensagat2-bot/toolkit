@@ -107,8 +107,8 @@ const onProgress = (_event, data) => {
   queueLog(data.message, String(data.message).endsWith('DONE') || String(data.message).endsWith('Ok') ? 'success' : 'info')
 }
 
-onMounted(() => {
-  rendererOn('utils:progress', onProgress)
+onMounted(async () => {
+  await rendererOn('utils:progress', onProgress)
   runJob()
 })
 

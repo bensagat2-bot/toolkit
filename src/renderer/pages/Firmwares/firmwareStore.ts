@@ -17,7 +17,7 @@ export interface FirmwareItem {
   network_disk_link?: string
   extraction_code?: string
   platform?: string
-  has_link: boolean
+  has_link?: boolean
 }
 
 export interface FirmwareState {

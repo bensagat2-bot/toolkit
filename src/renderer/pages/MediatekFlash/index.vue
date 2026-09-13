@@ -87,8 +87,8 @@ const onProgress = (_event, data) => {
   queueLog(data.message, String(data.message).endsWith('OK') ? 'success' : 'info')
 }
 
-onMounted(() => {
-  rendererOn('mtk:progress', onProgress)
+onMounted(async () => {
+  await rendererOn('mtk:progress', onProgress)
   runFlash()
 })
 

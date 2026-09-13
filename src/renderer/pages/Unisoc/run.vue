@@ -121,8 +121,8 @@ const onProgress = (_event, data) => {
   queueLog(data.message, String(data.message).endsWith('OK') ? 'success' : 'info')
 }
 
-onMounted(() => {
-  rendererOn('unisoc:progress', onProgress)
+onMounted(async () => {
+  await rendererOn('unisoc:progress', onProgress)
   runJob()
 })
 

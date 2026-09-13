@@ -5,13 +5,14 @@ export const sendIpcToMain = <T = any>(channel: string, ...args: any[]): Promise
   return invoke(channel, params) as Promise<T>
 }
 
-export function rendererOn(name: string, listener: (event: any, params: any) => void): void {
-  // Tauri v2 uses events via listen()
-  import('@tauri-apps/api/event').then(({ listen }) => {
+export function rendererOn(name: string, listener: (event: any, params: any) => void): Promise<void> {
+  // Tauri v2 uses events via listen(). Resolve once the listener is actually
+  // registered so callers can start emitting/invoking without losing events.
+  return import('@tauri-apps/api/event').then(({ listen }) =>
     listen(name, (event) => {
       listener(null, event.payload)
-    })
-  })
+    }).then(() => undefined)
+  )
 }
 
 export function rendererOff(_name: string, _listener: any): void {

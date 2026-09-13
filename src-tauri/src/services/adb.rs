@@ -29,14 +29,9 @@ pub async fn run_adb(args: &[&str]) -> String {
     if is_bundled(&path) && !std::path::Path::new(&path).exists() {
         return "adb: embedded platform-tools missing (reinstall the toolkit)".into();
     }
-    let output = base_command(&path)
-        .args(args)
-        .output()
-        .unwrap_or_else(|_| std::process::Output {
-            stdout: vec![],
-            stderr: format!("adb: failed to launch").into_bytes(),
-            status: std::process::ExitStatus::default(),
-        });
+    let mut cmd = base_command(&path);
+    cmd.args(args);
+    let output = super::utils::run_output(&mut cmd, 8000);
     String::from_utf8_lossy(&output.stdout).to_string()
 }
 
@@ -65,13 +60,8 @@ pub async fn run_fastboot(args: &[&str]) -> String {
     if is_bundled(&path) && !std::path::Path::new(&path).exists() {
         return "fastboot: embedded platform-tools missing (reinstall the toolkit)".into();
     }
-    let output = base_command(&path)
-        .args(args)
-        .output()
-        .unwrap_or_else(|_| std::process::Output {
-            stdout: vec![],
-            stderr: format!("fastboot: failed to launch").into_bytes(),
-            status: std::process::ExitStatus::default(),
-        });
+    let mut cmd = base_command(&path);
+    cmd.args(args);
+    let output = super::utils::run_output(&mut cmd, 8000);
     String::from_utf8_lossy(&output.stdout).to_string()
 }

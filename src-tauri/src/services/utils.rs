@@ -12,7 +12,8 @@ pub fn set_resource_dir(path: PathBuf) {
 }
 
 // Mirrors v1per-wpf: find a bundled tool folder next to the app by walking up
-// the directory tree, falling back to the extracted cache, then to PATH.
+// the directory tree, falling back to the extracted cache, then to SDK/common
+// install paths, then to PATH.
 fn find_tool_dir(folder: &str, exe: &str) -> Option<PathBuf> {
     if let Some(d) = RESOURCE_DIR.get() {
         let p = d.join(folder);
@@ -35,6 +36,29 @@ fn find_tool_dir(folder: &str, exe: &str) -> Option<PathBuf> {
                 return Some(direct);
             }
             dir = d.parent().map(|p| p.to_path_buf());
+        }
+    }
+    // Android SDK / manual install locations.
+    for var in ["ANDROID_HOME", "ANDROID_SDK_ROOT"] {
+        if let Ok(home) = std::env::var(var) {
+            if !home.is_empty() {
+                let p = PathBuf::from(home).join("platform-tools");
+                if p.join(exe).exists() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        let p = PathBuf::from(local).join("Android").join("Sdk").join("platform-tools");
+        if p.join(exe).exists() {
+            return Some(p);
+        }
+    }
+    if let Some(prog) = std::env::var_os("PROGRAMFILES") {
+        let p = PathBuf::from(prog).join("platform-tools");
+        if p.join(exe).exists() {
+            return Some(p);
         }
     }
     None
@@ -80,30 +104,67 @@ fn base_cmd(program: &str) -> Command {
     cmd
 }
 
-fn run_stdout(cmd: &mut Command, timeout_ms: u64) -> String {
+// Runs a command, capturing stdout, and kills the child if it exceeds the
+// timeout. The previous blocking read loop never hit its deadline when a child
+// (e.g. adb) stalled, and it never piped stdout, so `adb devices` always came
+// back empty - which froze the UI on "waiting for device".
+pub fn run_output(cmd: &mut Command, timeout_ms: u64) -> std::process::Output {
+    cmd.stdout(std::process::Stdio::piped());
     let mut child = match cmd.spawn() {
         Ok(c) => c,
-        Err(_) => return String::new(),
+        Err(_) => return default_output(),
     };
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
-    let mut buf = Vec::new();
-    if let Some(mut stdout) = child.stdout.take() {
+    let mut stdout = match child.stdout.take() {
+        Some(s) => s,
+        None => return default_output(),
+    };
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    let reader = std::thread::spawn(move || {
         use std::io::Read;
+        let mut buf = Vec::new();
         let mut chunk = [0u8; 8192];
         loop {
-            if std::time::Instant::now() >= deadline {
-                let _ = child.kill();
-                break;
-            }
             match stdout.read(&mut chunk) {
                 Ok(0) => break,
                 Ok(n) => buf.extend_from_slice(&chunk[..n]),
                 Err(_) => break,
             }
         }
+        let _ = tx.send(buf);
+    });
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+    loop {
+        if let Ok(Some(_)) = child.try_wait() {
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
     }
-    let _ = child.wait();
-    String::from_utf8_lossy(&buf).to_string()
+
+    let out_buf = rx.recv().unwrap_or_default();
+    let status = child.wait();
+    std::process::Output {
+        stdout: out_buf,
+        stderr: Vec::new(),
+        status: status.unwrap_or_default(),
+    }
+}
+
+fn default_output() -> std::process::Output {
+    std::process::Output {
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+        status: std::process::ExitStatus::default(),
+    }
+}
+
+fn run_stdout(cmd: &mut Command, timeout_ms: u64) -> String {
+    String::from_utf8_lossy(&run_output(cmd, timeout_ms).stdout).into_owned()
 }
 
 fn adb(args: &[&str], timeout_ms: u64) -> String {
