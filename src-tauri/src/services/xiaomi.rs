@@ -206,6 +206,26 @@ pub fn adb_reboot_bootloader(serial: &str) -> Result<String, String> {
     Ok(out)
 }
 
+/// Finds the connected ADB device and reboots it to fastboot mode.
+pub fn reboot_to_bootloader() -> Result<String, String> {
+    let out = adb(&["devices"], 5000);
+    let mut serial = String::new();
+    for line in out.lines().skip(1) {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 2 && parts[1] == "device" {
+            serial = parts[0].to_string();
+            break;
+        }
+        if parts.len() >= 2 && parts[1] == "unauthorized" {
+            return Err("USB debugging is not authorized. Unlock your phone and tap 'Allow'.".into());
+        }
+    }
+    if serial.is_empty() {
+        return Err("No ADB device found. Enable USB debugging and connect.".into());
+    }
+    adb_reboot_bootloader(&serial)
+}
+
 pub fn check_fastboot() -> bool {
     let out = fastboot(&["--version"], 5000);
     !out.trim().is_empty() && !out.contains("not found")

@@ -59,6 +59,19 @@ fn u32le(b: &[u8], off: usize) -> u32 {
     u32::from_le_bytes([b[off], b[off + 1], b[off + 2], b[off + 3]])
 }
 
+fn u64le(b: &[u8], off: usize) -> u64 {
+    u64::from_le_bytes([
+        b[off],
+        b[off + 1],
+        b[off + 2],
+        b[off + 3],
+        b[off + 4],
+        b[off + 5],
+        b[off + 6],
+        b[off + 7],
+    ])
+}
+
 struct ZipEntry {
     name: String,
     local_header_offset: u64,
@@ -80,7 +93,8 @@ fn locate_payload(c: &Client, url: &str) -> Result<(u64, u64), String> {
         .and_then(|v| v.trim().parse::<u64>().ok())
         .ok_or("cannot determine remote file size")?;
 
-    let tail_start = total.saturating_sub(22 + 65535);
+    // Include room for the ZIP64 EOCD locator (20 bytes before the EOCD).
+    let tail_start = total.saturating_sub(22 + 65535 + 20);
     let tail = fetch_range(c, url, tail_start, total - 1)?;
 
     let mut eocd = None;
@@ -93,8 +107,26 @@ fn locate_payload(c: &Client, url: &str) -> Result<(u64, u64), String> {
         }
     }
     let eocd = eocd.ok_or("EOCD not found")?;
-    let cd_size = u32le(&tail, eocd + 12) as u64;
-    let cd_offset = u32le(&tail, eocd + 16) as u64;
+
+    let mut cd_size = u32le(&tail, eocd + 12) as u64;
+    let mut cd_offset = u32le(&tail, eocd + 16) as u64;
+    let total_entries = u16le(&tail, eocd + 10) as u64;
+
+    // Xiaomi OTAs are larger than 4 GiB, so the 32-bit EOCD fields are the
+    // ZIP64 sentinels and the real values live in the ZIP64 EOCD record.
+    if cd_offset == 0xFFFF_FFFF || cd_size == 0xFFFF_FFFF || total_entries == 0xFFFF {
+        let locator = eocd.checked_sub(20).ok_or("ZIP64 locator not found")?;
+        if u32le(&tail, locator) != 0x0706_4b50 {
+            return Err("ZIP64 locator missing".to_string());
+        }
+        let z64_off = u64le(&tail, locator + 8);
+        let zrec = fetch_range(c, url, z64_off, z64_off + 55)?;
+        if zrec.len() < 56 || u32le(&zrec, 0) != 0x0606_4b50 {
+            return Err("ZIP64 EOCD record corrupt".to_string());
+        }
+        cd_size = u64le(&zrec, 40);
+        cd_offset = u64le(&zrec, 48);
+    }
 
     let cd = fetch_range(c, url, cd_offset, cd_offset + cd_size - 1)?;
     let mut entries = Vec::new();
@@ -106,12 +138,36 @@ fn locate_payload(c: &Client, url: &str) -> Result<(u64, u64), String> {
         let name_len = u16le(&cd, p + 28) as usize;
         let extra_len = u16le(&cd, p + 30) as usize;
         let comment_len = u16le(&cd, p + 32) as usize;
-        let local_offset = u32le(&cd, p + 42) as u64;
-        let size = u32le(&cd, p + 24) as u64;
+        let mut local_offset = u32le(&cd, p + 42) as u64;
+        let mut size = u32le(&cd, p + 24) as u64;
         if p + 46 + name_len > cd.len() {
             break;
         }
         let name = String::from_utf8_lossy(&cd[p + 46..p + 46 + name_len]).to_string();
+
+        // ZIP64 entries store the real size/offset in the 0x0001 extra field.
+        if size == 0xFFFF_FFFF || local_offset == 0xFFFF_FFFF {
+            let extra = &cd[p + 46 + name_len..p + 46 + name_len + extra_len];
+            let mut q = 0usize;
+            while q + 4 <= extra.len() {
+                let id = u16le(extra, q);
+                let flen = u16le(extra, q + 2) as usize;
+                let ds = q + 4;
+                if id == 0x0001 {
+                    let mut k = 0usize;
+                    if size == 0xFFFF_FFFF && ds + k + 8 <= extra.len() {
+                        size = u64le(extra, ds + k);
+                        k += 8;
+                    }
+                    if local_offset == 0xFFFF_FFFF && ds + k + 8 <= extra.len() {
+                        local_offset = u64le(extra, ds + k);
+                    }
+                    break;
+                }
+                q += 4 + flen;
+            }
+        }
+
         entries.push(ZipEntry {
             name,
             local_header_offset: local_offset,
@@ -247,7 +303,7 @@ fn parse_partition(data: &[u8]) -> Result<Partition, String> {
                 let s = r.bytes(len)?;
                 name = String::from_utf8_lossy(s).to_string();
             }
-            (3, 2) => {
+            (8, 2) => {
                 let len = r.varint()? as usize;
                 let data = r.bytes(len)?;
                 operations.push(parse_operation(data)?);
@@ -287,7 +343,7 @@ fn parse_operation(data: &[u8]) -> Result<Operation, String> {
             (1, 0) => op_type = r.varint()? as u32,
             (2, 0) => data_offset = r.varint()?,
             (3, 0) => data_length = r.varint()?,
-            (7, 2) => {
+            (6, 2) => {
                 let len = r.varint()? as usize;
                 let data = r.bytes(len)?;
                 let (start, blocks) = parse_extent(data)?;
@@ -612,6 +668,7 @@ fn write_partition(
         let block_count = op.dst_blocks * BLOCK_SIZE;
         let dest_off = op.dst_extent_start * BLOCK_SIZE;
         match op.op_type {
+            // REPLACE
             0 => {
                 reader.pos = data_offset + op.data_offset;
                 let mut buf = vec![0u8; 8192];
@@ -619,8 +676,8 @@ fn write_partition(
                 out_f
                     .seek(SeekFrom::Start(dest_off))
                     .map_err(|e| e.to_string())?;
-                while written_total < block_count {
-                    let need = ((block_count - written_total) as usize).min(buf.len());
+                while written_total < op.data_length {
+                    let need = ((op.data_length - written_total) as usize).min(buf.len());
                     let n = reader.read(&mut buf[..need])?;
                     if n == 0 {
                         break;
@@ -629,15 +686,8 @@ fn write_partition(
                     written_total += n as u64;
                 }
             }
+            // REPLACE_BZ
             1 => {
-                let data = read_op_data(reader, data_offset + op.data_offset, op.data_length)?;
-                let decomp = decompress_xz(&data)?;
-                out_f
-                    .seek(SeekFrom::Start(dest_off))
-                    .map_err(|e| e.to_string())?;
-                out_f.write_all(&decomp).map_err(|e| e.to_string())?;
-            }
-            2 => {
                 let data = read_op_data(reader, data_offset + op.data_offset, op.data_length)?;
                 let decomp = decompress_bz2(&data)?;
                 out_f
@@ -645,16 +695,33 @@ fn write_partition(
                     .map_err(|e| e.to_string())?;
                 out_f.write_all(&decomp).map_err(|e| e.to_string())?;
             }
-            7 => {
-                let zeros = vec![0u8; block_count as usize];
+            // ZERO
+            6 => {
                 out_f
                     .seek(SeekFrom::Start(dest_off))
                     .map_err(|e| e.to_string())?;
-                out_f.write_all(&zeros).map_err(|e| e.to_string())?;
+                let zeros = vec![0u8; 1 << 20];
+                let mut written_total = 0u64;
+                while written_total < block_count {
+                    let need = ((block_count - written_total) as usize).min(zeros.len());
+                    out_f
+                        .write_all(&zeros[..need])
+                        .map_err(|e| e.to_string())?;
+                    written_total += need as u64;
+                }
+            }
+            // REPLACE_XZ
+            8 => {
+                let data = read_op_data(reader, data_offset + op.data_offset, op.data_length)?;
+                let decomp = decompress_xz(&data)?;
+                out_f
+                    .seek(SeekFrom::Start(dest_off))
+                    .map_err(|e| e.to_string())?;
+                out_f.write_all(&decomp).map_err(|e| e.to_string())?;
             }
             other => {
                 return Err(format!(
-                    "unhandled operation type ({other}). Only REPLACE / XZ / BZ / ZERO supported"
+                    "unhandled operation type ({other}). Only REPLACE / REPLACE_BZ / REPLACE_XZ / ZERO supported"
                 ));
             }
         }

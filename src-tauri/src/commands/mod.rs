@@ -442,7 +442,7 @@ pub async fn xiaomi_fastboot_oem_unlock() -> Result<String, String> {
 
 #[command]
 pub async fn xiaomi_reboot_bootloader() -> Result<String, String> {
-    crate::services::xiaomi::fastboot_reboot()
+    crate::services::xiaomi::reboot_to_bootloader()
 }
 
 #[command]
