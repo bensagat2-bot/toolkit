@@ -53,6 +53,21 @@ const router = createRouter({
       component: () => import('@/pages/Utilities/run.vue'),
     },
     {
+      path: '/terminal',
+      name: 'Terminal',
+      component: () => import('@/pages/Terminal/index.vue'),
+    },
+    {
+      path: '/backup',
+      name: 'Backup',
+      component: () => import('@/pages/Backup/index.vue'),
+    },
+    {
+      path: '/backup/run',
+      name: 'BackupRun',
+      component: () => import('@/pages/Backup/run.vue'),
+    },
+    {
       path: '/settings',
       name: 'Settings',
       component: () => import('@/pages/Settings/index.vue'),

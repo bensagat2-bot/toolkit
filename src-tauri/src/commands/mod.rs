@@ -407,6 +407,44 @@ pub async fn utils_force_fastboot(app: tauri::AppHandle) -> Result<bool, String>
 }
 
 #[command]
+pub async fn term_run(app: tauri::AppHandle, command: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::utils::term_run(app, &command))
+        .await
+        .map_err(|e| format!("Terminal task failed: {e}"))?
+}
+
+#[command]
+pub async fn backup_list() -> Result<Vec<crate::services::backup::BackupCard>, String> {
+    Ok(crate::services::backup::list())
+}
+
+#[command]
+pub async fn backup_start(app: tauri::AppHandle, name: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::backup::start(app, name))
+        .await
+        .map_err(|e| format!("Backup task failed: {e}"))?
+}
+
+#[command]
+pub async fn backup_rename(old: String, new: String) -> Result<(), String> {
+    crate::services::backup::rename(&old, &new)
+}
+
+#[command]
+pub async fn backup_delete(name: String) -> Result<(), String> {
+    crate::services::backup::delete(&name)
+}
+
+#[command]
+pub async fn backup_download_selected(
+    name: String,
+    selected: Vec<String>,
+    dest: String,
+) -> Result<usize, String> {
+    crate::services::backup::download_selected(&name, selected, &dest)
+}
+
+#[command]
 pub async fn utils_scrcpy(app: tauri::AppHandle) -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(move || crate::services::utils::launch_scrcpy(app))
         .await

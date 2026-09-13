@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
@@ -207,12 +208,61 @@ fn fastboot(args: &[&str], timeout_ms: u64) -> String {
     run_stdout(base_cmd(&fastboot_path()).args(args), timeout_ms)
 }
 
-fn adb_serial(serial: &str, args: &[&str], timeout_ms: u64) -> String {
+pub(crate) fn adb_serial(serial: &str, args: &[&str], timeout_ms: u64) -> String {
     adb(&["-s", serial].into_iter().chain(args.iter().copied()).collect::<Vec<_>>(), timeout_ms)
 }
 
-fn fastboot_serial(serial: &str, args: &[&str], timeout_ms: u64) -> String {
+pub(crate) fn fastboot_serial(serial: &str, args: &[&str], timeout_ms: u64) -> String {
     fastboot(&["-s", serial].into_iter().chain(args.iter().copied()).collect::<Vec<_>>(), timeout_ms)
+}
+
+/// Detects the current device mode: "adb", "fastboot", or "none", plus the
+/// serial. ADB is checked first since it is the preferred backup path.
+pub(crate) fn detect_mode() -> (String, Option<String>) {
+    let out = adb(&["devices"], 8000);
+    for line in out.lines().skip(1) {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 2 && parts[1] == "device" {
+            return ("adb".into(), Some(parts[0].into()));
+        }
+    }
+    let fb = fastboot(&["devices"], 8000);
+    for line in fb.lines() {
+        let parts: Vec<&str> = line.trim().split_whitespace().collect();
+        if !parts.is_empty() && !line.contains("waiting") {
+            return ("fastboot".into(), Some(parts[0].into()));
+        }
+    }
+    ("none".into(), None)
+}
+
+/// Dumps a raw block device (e.g. a partition) from the device to a local file
+/// via `adb exec-out su -c dd`. Returns bytes written.
+pub(crate) fn dump_partition(serial: &str, src: &str, dest: &std::path::Path) -> Result<u64, String> {
+    let mut cmd = base_cmd(&adb_path());
+    cmd.args(["-s", serial, "exec-out", "su", "-c", &format!("dd if={src} bs=1M 2>/dev/null")]);
+    cmd.stdout(std::fs::File::create(dest).map_err(|e| format!("Failed to create file: {e}"))?);
+    cmd.stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to run dd: {e}"))?;
+    let mut stderr = child.stderr.take();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
+    loop {
+        if let Ok(Some(_)) = child.try_wait() {
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("dd timed out after 600s".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    drop(stderr);
+    let status = child.wait().unwrap_or_default();
+    if !status.success() {
+        return Err(format!("dd exited with status {status}"));
+    }
+    fs::metadata(dest).map(|m| m.len()).map_err(|e| format!("Failed to stat output: {e}"))
 }
 
 fn downloads_dir() -> PathBuf {
@@ -346,7 +396,7 @@ fn ready_adb_device() -> Result<String, String> {
     }
 }
 
-fn device_prop(serial: &str, prop: &str) -> String {
+pub(crate) fn device_prop(serial: &str, prop: &str) -> String {
     adb_serial(serial, &["shell", "getprop", prop], 8000).trim().to_string()
 }
 
@@ -409,6 +459,9 @@ pub fn driver_download(app: AppHandle, name: String, url: String) -> Result<bool
 }
 
 // ── Root ─────────────────────────────────────────────────────
+
+const ROOT_BANNER: &str = include_str!("../../banner.txt");
+const FOLKPATCH_BANNER: &str = include_str!("../../banner-folkpatch.txt");
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RootOptions {
@@ -478,6 +531,7 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
             false
         }
     };
+    emit(&app, if use_folk { FOLKPATCH_BANNER.trim_end() } else { ROOT_BANNER.trim_end() });
 
     let (release_url, manager_label, apk_label, prefer): (&str, &str, &str, &str) = if use_folk {
         emit(&app, "Fetching releases info for FolkPatch... DONE");
@@ -1288,4 +1342,151 @@ fn in_fastboot_mode_or_gone(port_name: &str) -> bool {
         }
     }
     false
+}
+
+// ── Terminal ─────────────────────────────────────────────────
+
+/// Emits one terminal output line to the renderer.
+fn emit_term(app: &AppHandle, line: &str) {
+    let _ = app.emit("term:output", serde_json::json!({ "line": line }));
+}
+
+/// Splits a command line into a program + args, honoring double quotes so a
+/// drag-dropped file path with spaces survives intact.
+fn split_command(input: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    for c in input.trim().chars() {
+        match c {
+            '"' => in_quotes = !in_quotes,
+            ' ' if !in_quotes => {
+                if !current.is_empty() {
+                    parts.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(c),
+        }
+    }
+    if !current.is_empty() {
+        parts.push(current);
+    }
+    parts
+}
+
+/// Routes a bare tool name to its bundled/real path.
+fn resolve_program(program: &str) -> String {
+    let lower = program.to_lowercase();
+    match lower.as_str() {
+        "adb" => adb_path(),
+        "fastboot" => fastboot_path(),
+        "scrcpy" => scrcpy_path().join("scrcpy.exe").to_string_lossy().into_owned(),
+        // Anything else runs from PATH (real cmd feel).
+        _ => program.to_string(),
+    }
+}
+
+/// Runs a command line typed in the toolkit terminal, streaming stdout+stderr
+/// to the renderer line-by-line in real time. adb/fastboot resolve to the
+/// bundled platform-tools; anything else falls through to PATH.
+pub fn term_run(app: AppHandle, command: &str) -> Result<bool, String> {
+    let parts = split_command(command);
+    if parts.is_empty() {
+        return Ok(true);
+    }
+    let program = resolve_program(&parts[0]);
+    let args: Vec<&str> = parts[1..].iter().map(|s| s.as_str()).collect();
+
+    let mut cmd = base_cmd(&program);
+    cmd.args(&args);
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            emit_term(&app, &format!("error: could not run '{}': {e}", parts[0]));
+            return Ok(false);
+        }
+    };
+
+    let mut stdout = child.stdout.take();
+    let mut stderr = child.stderr.take();
+
+    if let Some(mut out) = stdout.take() {
+        let app_stdout = app.clone();
+        std::thread::spawn(move || {
+            use std::io::Read;
+            let mut buf = [0u8; 4096];
+            let mut carry = String::new();
+            loop {
+                match out.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        carry.push_str(&String::from_utf8_lossy(&buf[..n]));
+                        while let Some(pos) = carry.find('\n') {
+                            let line = carry[..pos].trim_end_matches('\r').to_string();
+                            if !line.is_empty() {
+                                emit_term(&app_stdout, &line);
+                            }
+                            carry = carry[pos + 1..].to_string();
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            if !carry.trim().is_empty() {
+                emit_term(&app_stdout, &carry.trim_end_matches('\r'));
+            }
+        });
+    }
+    drop(stdout);
+
+    if let Some(mut err) = stderr.take() {
+        let app_stderr = app.clone();
+        std::thread::spawn(move || {
+            use std::io::Read;
+            let mut buf = [0u8; 4096];
+            let mut carry = String::new();
+            loop {
+                match err.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        carry.push_str(&String::from_utf8_lossy(&buf[..n]));
+                        while let Some(pos) = carry.find('\n') {
+                            let line = carry[..pos].trim_end_matches('\r').to_string();
+                            if !line.is_empty() {
+                                emit_term(&app_stderr, &line);
+                            }
+                            carry = carry[pos + 1..].to_string();
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            if !carry.trim().is_empty() {
+                emit_term(&app_stderr, &carry.trim_end_matches('\r'));
+            }
+        });
+    }
+    drop(stderr);
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
+    loop {
+        if let Ok(Some(_)) = child.try_wait() {
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            emit_term(&app, "[timed out after 300s, killed]");
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    let status = child.wait().unwrap_or_default();
+    let code = status.code().unwrap_or(-1);
+    emit_term(&app, &format!("[exit code: {code}]"));
+    Ok(true)
 }
