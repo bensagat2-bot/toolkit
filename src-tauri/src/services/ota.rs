@@ -30,7 +30,8 @@ pub fn mirror_url(url: &str) -> String {
 fn client() -> Client {
     Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        .timeout(std::time::Duration::from_secs(180))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(60))
         .build()
         .unwrap_or_default()
 }
@@ -128,6 +129,10 @@ fn locate_payload(c: &Client, url: &str) -> Result<(u64, u64), String> {
         cd_offset = u64le(&zrec, 48);
     }
 
+    if cd_size > 64 * 1024 * 1024 {
+        return Err("central directory too large".to_string());
+    }
+
     let cd = fetch_range(c, url, cd_offset, cd_offset + cd_size - 1)?;
     let mut entries = Vec::new();
     let mut p = 0usize;
@@ -140,12 +145,15 @@ fn locate_payload(c: &Client, url: &str) -> Result<(u64, u64), String> {
         let comment_len = u16le(&cd, p + 32) as usize;
         let mut local_offset = u32le(&cd, p + 42) as u64;
         let mut size = u32le(&cd, p + 24) as u64;
+        let compressed_is_z64 = u32le(&cd, p + 20) == 0xFFFF_FFFF;
         if p + 46 + name_len > cd.len() {
             break;
         }
         let name = String::from_utf8_lossy(&cd[p + 46..p + 46 + name_len]).to_string();
 
-        // ZIP64 entries store the real size/offset in the 0x0001 extra field.
+        // ZIP64 entries store the real values in the 0x0001 extra field, in a
+        // fixed order (uncompressed size, compressed size, header offset, disk
+        // start) but only for the 32-bit fields that hold the 0xFFFFFFFF sentinel.
         if size == 0xFFFF_FFFF || local_offset == 0xFFFF_FFFF {
             let extra = &cd[p + 46 + name_len..p + 46 + name_len + extra_len];
             let mut q = 0usize;
@@ -157,6 +165,9 @@ fn locate_payload(c: &Client, url: &str) -> Result<(u64, u64), String> {
                     let mut k = 0usize;
                     if size == 0xFFFF_FFFF && ds + k + 8 <= extra.len() {
                         size = u64le(extra, ds + k);
+                        k += 8;
+                    }
+                    if compressed_is_z64 && ds + k + 8 <= extra.len() {
                         k += 8;
                     }
                     if local_offset == 0xFFFF_FFFF && ds + k + 8 <= extra.len() {
@@ -503,6 +514,7 @@ impl PayloadReader {
                 let _ = self.job_tx.send(key);
             }
         }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
         loop {
             if let Some(d) = self.cache.lock().unwrap().get(&key).cloned() {
                 return Ok(d);
@@ -510,7 +522,10 @@ impl PayloadReader {
             if let Some(e) = self.errors.lock().unwrap().get(&key).cloned() {
                 return Err(e);
             }
-            std::thread::sleep(std::time::Duration::from_millis(2));
+            if std::time::Instant::now() >= deadline {
+                return Err(format!("Timed out waiting for payload chunk {key}"));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
         }
     }
 
@@ -526,7 +541,9 @@ impl PayloadReader {
             let data = self.chunk(key)?;
             let take = (n - written).min(data.len().saturating_sub(off));
             if take == 0 {
-                break;
+                // Chunk exhausted earlier than expected; advance to the next one.
+                self.pos = ((key + 1).saturating_mul(READAHEAD)).min(self.size);
+                continue;
             }
             buf[written..written + take].copy_from_slice(&data[off..off + take]);
             self.pos += take as u64;

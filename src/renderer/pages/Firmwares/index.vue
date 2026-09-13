@@ -226,7 +226,14 @@ async function fetchFirmwares() {
     if (search.value) params.set('search', search.value)
     const res = await fetch(`${API_BASE}/api/${source.value}/firmware?${params}`)
     const data = await res.json()
-    items.value = data.data || []
+    // Strip any download link leaked by the list endpoint so firmware links can
+    // only ever be obtained through a credit purchase.
+    items.value = (data.data || []).map((it) => ({
+      ...it,
+      link: undefined,
+      network_disk_link: undefined,
+      extraction_code: undefined,
+    }))
     total.value = data.total || 0
     pages.value = data.pages || 1
     lastUpdated.value = new Date().toLocaleTimeString()

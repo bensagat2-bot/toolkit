@@ -187,6 +187,22 @@ fn downloads_dir() -> PathBuf {
     dirs::download_dir().unwrap_or_else(|| std::env::temp_dir())
 }
 
+// User-visible toolkit folder inside Downloads. Holds the backed-up boot
+// image and the KernelSU/FolkPatch manager APK the user asked for.
+fn toolkit_files_dir() -> PathBuf {
+    let d = downloads_dir().join("v1per-toolkit-files");
+    std::fs::create_dir_all(&d).ok();
+    d
+}
+
+// Private scratch folder for helper binaries we push to the phone but must
+// not leave behind in the user's Downloads folder.
+fn work_tmp_dir() -> PathBuf {
+    let d = std::env::temp_dir().join("v1per-toolkit");
+    std::fs::create_dir_all(&d).ok();
+    d
+}
+
 fn fetch_json(url: &str) -> Option<serde_json::Value> {
     let client = reqwest::blocking::Client::builder()
         .user_agent("V1Per-Toolkit/1.0")
@@ -230,13 +246,13 @@ fn pick_asset(release: &serde_json::Value, exact: &str) -> Option<serde_json::Va
     release.get("assets")?.as_array()?.iter().find(|a| asset_name(a) == exact).cloned()
 }
 
-fn download_file(app: &AppHandle, url: &str, filename: &str) -> Result<PathBuf, String> {
+fn download_file_into(app: &AppHandle, url: &str, filename: &str, dir: &Path) -> Result<PathBuf, String> {
     let client = reqwest::blocking::Client::builder()
         .user_agent("V1Per-Toolkit/1.0")
         .timeout(std::time::Duration::from_secs(600))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
-    let dest = downloads_dir().join(filename);
+    let dest = dir.join(filename);
     if dest.exists() && dest.metadata().map(|m| m.len()).unwrap_or(0) > 0 {
         return Ok(dest);
     }
@@ -246,6 +262,11 @@ fn download_file(app: &AppHandle, url: &str, filename: &str) -> Result<PathBuf, 
     }
     let bytes = resp.bytes().map_err(|e| format!("Failed to read response: {e}"))?;
     std::fs::write(&dest, &bytes).map_err(|e| format!("Failed to write file: {e}"))?;
+    Ok(dest)
+}
+
+fn download_file(app: &AppHandle, url: &str, filename: &str) -> Result<PathBuf, String> {
+    let dest = download_file_into(app, url, filename, &downloads_dir())?;
     emit(app, "Downloading... DONE");
     Ok(dest)
 }
@@ -311,10 +332,28 @@ fn fastboot_devices() -> Vec<String> {
         .collect()
 }
 
+// Reads `fastboot getvar unlocked` live and returns whether the value is "yes".
+// Xiaomi returns "(bootloader) unlocked: yes" when unlocked and ": no" when
+// locked. If the device is not ready yet the command returns empty, so we
+// retry a few times before deciding.
 fn is_unlocked(serial: &str) -> bool {
-    let out = fastboot_serial(serial, &["getvar", "unlocked"], 10000);
-    out.lines()
-        .any(|l| l.to_lowercase().replace("(bootloader)", "").contains("unlocked: yes"))
+    for _ in 0..4 {
+        let out = fastboot_serial(serial, &["getvar", "unlocked"], 15000);
+        let lower = out.to_lowercase();
+        if let Some(val) = lower.split("unlocked:").nth(1) {
+            let v = val.trim_start();
+            if v.starts_with('y') {
+                return true;
+            }
+            if v.starts_with('n') {
+                return false;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(800));
+    }
+    // Fallback: some devices only expose the flag via `getvar all`.
+    let all = fastboot_serial(serial, &["getvar", "all"], 15000);
+    all.to_lowercase().contains("unlocked: yes")
 }
 
 fn flash_looks_ok(output: &str) -> bool {
@@ -355,8 +394,31 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     }
 
     emit(&app, "Checking ADB Connection...");
-    let serial = ready_adb_device()?;
-    emit(&app, "Checking ADB Connection... FOUND");
+    let serial = match ready_adb_device() {
+        Ok(s) => {
+            emit(&app, "Checking ADB Connection... FOUND");
+            s
+        }
+        Err(e) => {
+            emit(&app, "Checking ADB Connection... NOT FOUND");
+            return Err(e);
+        }
+    };
+
+    let work = work_tmp_dir();
+    let files_dir = toolkit_files_dir();
+
+    let backup_name = format!(
+        "backup-{}",
+        boot_img
+            .file_name()
+            .map(|f| f.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "boot.img".to_string())
+    );
+    let backup_path = files_dir.join(&backup_name);
+    std::fs::copy(boot_img, &backup_path)
+        .map_err(|e| format!("Failed to back up boot image: {e}"))?;
+    emit(&app, format!("Backed up boot image -> {}", backup_path.display()).as_str());
 
     let model = device_prop(&serial, "ro.product.model");
     let sdk = device_prop(&serial, "ro.build.version.sdk");
@@ -399,7 +461,7 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     let apk_name = asset_name(&apk);
 
     emit(&app, "Downloading...");
-    let apk_path = download_file(&app, &apk_url, &apk_name)?;
+    let apk_path = download_file_into(&app, &apk_url, &apk_name, &files_dir)?;
     emit(&app, format!("Downloading [{}]... DONE", apk_label).as_str());
 
     emit(&app, format!("Installing [{}] on device...", manager_label).as_str());
@@ -420,9 +482,9 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
 
     emit(&app, "Patching boot image...");
     let patched_local = if use_folk {
-        auto_patch_folkpatch(&app, &serial, boot_img.to_string_lossy().as_ref())?
+        auto_patch_folkpatch(&app, &serial, &work, boot_img.to_string_lossy().as_ref())?
     } else {
-        auto_patch_ksud(&app, &serial, boot_img.to_string_lossy().as_ref(), &release, &abi)?
+        auto_patch_ksud(&app, &serial, &work, boot_img.to_string_lossy().as_ref(), &release, &abi)?
     };
     let Some(patched_local) = patched_local else {
         return Err("Auto-patch failed.".into());
@@ -430,6 +492,8 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     emit(&app, format!("Patching complete: {}", patched_local).as_str());
 
     flash_patched(&app, &serial, part_name, &patched_local)?;
+
+    let _ = std::fs::remove_file(Path::new(&patched_local));
 
     let elapsed = started.elapsed().as_secs();
     emit(&app, format!("Elapsed Time: {}s", elapsed).as_str());
@@ -547,12 +611,13 @@ fn pick_ksud(release: &serde_json::Value, abi: &str) -> Option<serde_json::Value
 fn auto_patch_ksud(
     app: &AppHandle,
     serial: &str,
+    work: &Path,
     image_path: &str,
     release: &serde_json::Value,
     abi: &str,
 ) -> Result<Option<String>, String> {
     let ksud = pick_ksud(release, abi).ok_or("No on-device ksud in this release.")?;
-    let ksud_local = download_file(app, &asset_url(&ksud), &asset_name(&ksud))?;
+    let ksud_local = download_file_into(app, &asset_url(&ksud), &asset_name(&ksud), work)?;
 
     const REMOTE_KSUD: &str = "/data/local/tmp/ksud";
     const REMOTE_IN: &str = "/sdcard/Download/v1per_input.img";
@@ -564,6 +629,9 @@ fn auto_patch_ksud(
     adb_serial(serial, &["push", image_path, REMOTE_IN], 120000);
     adb_serial(serial, &["shell", "chmod", "755", REMOTE_KSUD], 10000);
     adb_serial(serial, &["shell", "rm", "-f", remote_out.as_str()], 10000);
+
+    // The ksud helper lives on the device now; never leave it in the user's folder.
+    let _ = std::fs::remove_file(&ksud_local);
 
     emit(app, "Reading KMI...");
     let kmi = detect_kmi(serial, Some(REMOTE_KSUD));
@@ -597,7 +665,7 @@ fn auto_patch_ksud(
         return Err("ksud did not produce a patched image.".into());
     }
 
-    let patched_local = downloads_dir().join("patched_boot.img");
+    let patched_local = work.join("patched_boot.img");
     adb_serial(serial, &["pull", remote_out.as_str(), patched_local.to_string_lossy().as_ref()], 120000);
     let ok = std::fs::metadata(&patched_local).map(|m| m.len() >= 4096).unwrap_or(false);
     if !ok {
@@ -607,14 +675,14 @@ fn auto_patch_ksud(
     Ok(Some(patched_local.to_string_lossy().into_owned()))
 }
 
-fn auto_patch_folkpatch(app: &AppHandle, serial: &str, image_path: &str) -> Result<Option<String>, String> {
+fn auto_patch_folkpatch(app: &AppHandle, serial: &str, work: &Path, image_path: &str) -> Result<Option<String>, String> {
     let release = fetch_json("https://api.github.com/repos/bmax121/KernelPatch/releases/latest")
         .ok_or("Failed to fetch KernelPatch release. Check internet.")?;
     let tools = pick_asset(&release, "kptools-android").ok_or("No kptools-android in KernelPatch release.")?;
     let kpimg = pick_asset(&release, "kpimg-android").ok_or("No kpimg-android in KernelPatch release.")?;
 
-    let tools_local = download_file(app, &asset_url(&tools), &asset_name(&tools))?;
-    let kpimg_local = download_file(app, &asset_url(&kpimg), &asset_name(&kpimg))?;
+    let tools_local = download_file_into(app, &asset_url(&tools), &asset_name(&tools), work)?;
+    let kpimg_local = download_file_into(app, &asset_url(&kpimg), &asset_name(&kpimg), work)?;
 
     const REMOTE_BIN: &str = "/data/local/tmp/kptools";
     const REMOTE_KPIMG: &str = "/data/local/tmp/kpimg-android";
@@ -660,7 +728,7 @@ fn auto_patch_folkpatch(app: &AppHandle, serial: &str, image_path: &str) -> Resu
         }
     }
 
-    let patched_local = downloads_dir().join("patched_boot.img");
+    let patched_local = work.join("patched_boot.img");
     adb_serial(serial, &["pull", remote_out.as_str(), patched_local.to_string_lossy().as_ref()], 120000);
     let ok = std::fs::metadata(&patched_local).map(|m| m.len() >= 4096).unwrap_or(false);
     if !ok {
@@ -673,6 +741,7 @@ fn auto_patch_folkpatch(app: &AppHandle, serial: &str, image_path: &str) -> Resu
 fn flash_patched(app: &AppHandle, serial: &str, partition: &str, patched_local: &str) -> Result<(), String> {
     emit(app, "Rebooting device to bootloader mode...");
     adb_serial(serial, &["reboot", "bootloader"], 15000);
+    emit(app, "Rebooting device to bootloader mode... DONE");
 
     emit(app, "Waiting for device in fastboot mode...");
     let mut fb_serial = None;
@@ -684,15 +753,23 @@ fn flash_patched(app: &AppHandle, serial: &str, partition: &str, patched_local: 
             break;
         }
     }
-    let mut fb_serial = fb_serial.ok_or("Fastboot device not detected.")?;
-    emit(app, "Device detected in fastboot mode");
+    let mut fb_serial = match fb_serial {
+        Some(d) => {
+            emit(app, "Waiting for device in fastboot mode... FOUND");
+            d
+        }
+        None => {
+            emit(app, "Waiting for device in fastboot mode... NOT FOUND");
+            return Err("Fastboot device not detected.".into());
+        }
+    };
 
     emit(app, "Checking bootloader status...");
     let mut unlocked = is_unlocked(&fb_serial);
     if unlocked {
-        emit(app, "Bootloader is UNLOCKED");
+        emit(app, "Checking bootloader status... UNLOCKED");
     } else {
-        emit(app, "Bootloader is LOCKED");
+        emit(app, "Checking bootloader status... LOCKED");
         emit(app, "Attempting to unlock bootloader...");
         for attempt in 1..=5 {
             emit(app, format!("Attempt {attempt}/5").as_str());
@@ -706,6 +783,7 @@ fn flash_patched(app: &AppHandle, serial: &str, partition: &str, patched_local: 
                 fb_serial = d.clone();
             }
             if is_unlocked(&fb_serial) {
+                emit(app, "Attempting to unlock bootloader... DONE");
                 emit(app, "Bootloader successfully unlocked");
                 unlocked = true;
                 break;
@@ -841,6 +919,7 @@ pub fn anykernel(app: AppHandle, opts: AnyKernelOptions) -> Result<bool, String>
     let image = downloads_dir().join(format!("{}_anykernel.img", chosen));
     emit(&app, "Rebooting device to bootloader mode...");
     adb(&["reboot", "bootloader"], 15000);
+    emit(&app, "Rebooting device to bootloader mode... DONE");
     emit(&app, "Waiting for device in fastboot mode...");
     let mut fb_serial = None;
     for _ in 0..20 {
@@ -851,8 +930,16 @@ pub fn anykernel(app: AppHandle, opts: AnyKernelOptions) -> Result<bool, String>
             break;
         }
     }
-    let fb_serial = fb_serial.ok_or("Fastboot device not detected.")?;
-    emit(&app, "Device detected in fastboot mode");
+    let fb_serial = match fb_serial {
+        Some(d) => {
+            emit(&app, "Waiting for device in fastboot mode... FOUND");
+            d
+        }
+        None => {
+            emit(&app, "Waiting for device in fastboot mode... NOT FOUND");
+            return Err("Fastboot device not detected.".into());
+        }
+    };
 
     emit(&app, format!("Flashing {} with boot_anykernel.img", chosen).as_str());
     let result = fastboot_serial(&fb_serial, &["flash", &chosen, image.to_string_lossy().as_ref()], 90000);
@@ -891,8 +978,16 @@ pub fn launch_scrcpy(app: AppHandle) -> Result<bool, String> {
     }
 
     emit(&app, "Checking ADB connection...");
-    let serial = ready_adb_device()?;
-    emit(&app, "Checking ADB connection... FOUND");
+    let serial = match ready_adb_device() {
+        Ok(s) => {
+            emit(&app, "Checking ADB connection... FOUND");
+            s
+        }
+        Err(e) => {
+            emit(&app, "Checking ADB connection... NOT FOUND");
+            return Err(e);
+        }
+    };
     emit(&app, format!("Device: {}", serial).as_str());
 
     if scrcpy_running() {
