@@ -1013,7 +1013,7 @@ fn list_remote_zip_images(c: &Client, url: &str) -> Result<Vec<FastbootImageInfo
         let comment_len = u16le(&cd, p + 32) as usize;
         let _local_offset = u32le(&cd, p + 42) as u64;
         let mut size = u32le(&cd, p + 24) as u64;
-        let compressed_is_z64 = u32le(&cd, p + 20) == 0xFFFF_FFFF;
+        let _compressed_is_z64 = u32le(&cd, p + 20) == 0xFFFF_FFFF;
         if p + 46 + name_len > cd.len() { break; }
         let name = String::from_utf8_lossy(&cd[p + 46..p + 46 + name_len]).to_string();
 
@@ -1026,7 +1026,7 @@ fn list_remote_zip_images(c: &Client, url: &str) -> Result<Vec<FastbootImageInfo
                 let ds = q + 4;
                 if id == 0x0001 {
                     let mut k = 0usize;
-                    if size == 0xFFFF_FFFF && ds + k + 8 <= extra.len() { size = u64le(extra, ds + k); k += 8; }
+                    if size == 0xFFFF_FFFF && ds + k + 8 <= extra.len() { size = u64le(extra, ds + k); let _ = k; }
                     // compressed_is_z64 field is present but we skip it (not needed for listing)
                     break;
                 }

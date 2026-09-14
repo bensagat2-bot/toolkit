@@ -2,6 +2,8 @@
 // Lists installed packages with app labels, system/user detection.
 // Auto-grants SU via ensure_su_access before operations.
 
+use base64::Engine;
+
 use serde::Serialize;
 use super::utils::{run_cmd, adb_path};
 
@@ -299,7 +301,7 @@ fn extract_icon_from_apk(apk_path: &std::path::Path) -> Result<String, String> {
                 let mut data = Vec::new();
                 if entry.read_to_end(&mut data).is_ok() && data.len() >= 50 {
                     let mime = if path.ends_with(".webp") { "image/webp" } else { "image/png" };
-                    let b64 = base64::Engine::encode(&data, &base64::engine::general_purpose::STANDARD);
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
                     return Ok(format!("data:{};base64,{}", mime, b64));
                 }
             }
@@ -331,7 +333,7 @@ fn extract_icon_from_apk(apk_path: &std::path::Path) -> Result<String, String> {
     candidates.sort_by(|a, b| b.2.cmp(&a.2));
     if let Some((path, data, _)) = candidates.into_iter().next() {
         let mime = if path.ends_with(".webp") { "image/webp" } else { "image/png" };
-        let b64 = base64::Engine::encode(&data, &base64::engine::general_purpose::STANDARD);
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
         Ok(format!("data:{};base64,{}", mime, b64))
     } else {
         Err("No icon found in APK".to_string())
