@@ -111,6 +111,7 @@ pub fn run() {
             commands::utils_scrcpy,
             commands::term_run,
             commands::check_fastboot_driver,
+            commands::ensure_su_access,
             commands::backup_list,
             commands::backup_start,
             commands::backup_rename,

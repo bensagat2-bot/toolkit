@@ -1006,13 +1006,13 @@ fn list_remote_zip_images(c: &Client, url: &str) -> Result<Vec<FastbootImageInfo
         let name_len = u16le(&cd, p + 28) as usize;
         let extra_len = u16le(&cd, p + 30) as usize;
         let comment_len = u16le(&cd, p + 32) as usize;
-        let mut local_offset = u32le(&cd, p + 42) as u64;
+        let _local_offset = u32le(&cd, p + 42) as u64;
         let mut size = u32le(&cd, p + 24) as u64;
         let compressed_is_z64 = u32le(&cd, p + 20) == 0xFFFF_FFFF;
         if p + 46 + name_len > cd.len() { break; }
         let name = String::from_utf8_lossy(&cd[p + 46..p + 46 + name_len]).to_string();
 
-        if size == 0xFFFF_FFFF || local_offset == 0xFFFF_FFFF {
+        if size == 0xFFFF_FFFF {
             let extra = &cd[p + 46 + name_len..p + 46 + name_len + extra_len];
             let mut q = 0usize;
             while q + 4 <= extra.len() {
@@ -1023,7 +1023,6 @@ fn list_remote_zip_images(c: &Client, url: &str) -> Result<Vec<FastbootImageInfo
                     let mut k = 0usize;
                     if size == 0xFFFF_FFFF && ds + k + 8 <= extra.len() { size = u64le(extra, ds + k); k += 8; }
                     if compressed_is_z64 && ds + k + 8 <= extra.len() { k += 8; }
-                    if local_offset == 0xFFFF_FFFF && ds + k + 8 <= extra.len() { local_offset = u64le(extra, ds + k); }
                     break;
                 }
                 q += 4 + flen;

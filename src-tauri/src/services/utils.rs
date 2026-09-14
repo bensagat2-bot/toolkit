@@ -357,7 +357,7 @@ fn pick_asset(release: &serde_json::Value, exact: &str) -> Option<serde_json::Va
     release.get("assets")?.as_array()?.iter().find(|a| asset_name(a) == exact).cloned()
 }
 
-fn download_file_into(app: &AppHandle, url: &str, filename: &str, dir: &Path) -> Result<PathBuf, String> {
+fn download_file_into(_app: &AppHandle, url: &str, filename: &str, dir: &Path) -> Result<PathBuf, String> {
     let client = reqwest::blocking::Client::builder()
         .user_agent("V1Per-Toolkit/1.0")
         .timeout(std::time::Duration::from_secs(600))
@@ -427,6 +427,92 @@ fn ready_adb_device() -> Result<String, String> {
 
 pub(crate) fn device_prop(serial: &str, prop: &str) -> String {
     adb_serial(serial, &["shell", "getprop", prop], 8000).trim().to_string()
+}
+
+/// Ensures shell has permanent SU access without manual phone interaction.
+/// 1. Tries `adb root` (restarts adbd as root, no SU prompts ever).
+/// 2. Checks if shell already has SU via `su -c id`.
+/// 3. If KernelSU detected, auto-grants via `ksud allowlist -add 2000` (user approves ONCE, permanent after).
+/// Returns (success, message).
+pub fn ensure_su_access() -> (bool, String) {
+    // Step 1: Try adb root
+    let root_output = run_stdout(base_cmd(&adb_path()).args(["root"]), 8000);
+    if root_output.contains("restarting") || root_output.contains("already root") {
+        // adb root succeeded or already running as root
+        let check = run_stdout(base_cmd(&adb_path()).args(["shell", "id"]), 5000);
+        if check.contains("uid=0") {
+            log::write("ensure_su_access: adb root active, shell is root");
+            return (true, "adb root: shell running as root".into());
+        }
+        // Give adbd time to restart
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let check2 = run_stdout(base_cmd(&adb_path()).args(["shell", "id"]), 5000);
+        if check2.contains("uid=0") {
+            log::write("ensure_su_access: adb root active after restart");
+            return (true, "adb root: shell running as root".into());
+        }
+    }
+
+    // Step 2: Check if shell already has SU access (user pre-granted)
+    let su_check = run_stdout(base_cmd(&adb_path()).args(["shell", "su", "-c", "id"]), 8000);
+    if su_check.contains("uid=0") {
+        log::write("ensure_su_access: shell already has SU access");
+        return (true, "SU access already granted".into());
+    }
+
+    // Step 3: Detect KernelSU and auto-grant shell permanently
+    let ksu_exists = run_stdout(base_cmd(&adb_path()).args(["shell", "[", "-f", "/data/adb/ksu/bin/ksud", "]", "&&", "echo", "yes"]), 5000);
+    if ksu_exists.contains("yes") {
+        log::write("ensure_su_access: KernelSU detected, attempting auto-grant via ksud allowlist");
+        // Try without su first (some KernelSU builds allow ksud from shell domain)
+        let direct = run_stdout(base_cmd(&adb_path()).args(["shell", "/data/adb/ksu/bin/ksud", "allowlist", "-add", "2000"]), 10000);
+        if direct.is_empty() || !direct.contains("denied") {
+            let verify = run_stdout(base_cmd(&adb_path()).args(["shell", "su", "-c", "id"]), 8000);
+            if verify.contains("uid=0") {
+                log::write("ensure_su_access: KernelSU auto-grant succeeded via direct ksud");
+                return (true, "KernelSU: shell permanently granted SU access".into());
+            }
+        }
+        // Fallback: try via su (user approves ONCE, then permanent)
+        let su_allow = run_stdout(base_cmd(&adb_path()).args(["shell", "su", "-c", "/data/adb/ksu/bin/ksud allowlist -add 2000"]), 15000);
+        if !su_allow.contains("denied") && !su_allow.contains("error") {
+            let verify2 = run_stdout(base_cmd(&adb_path()).args(["shell", "su", "-c", "id"]), 8000);
+            if verify2.contains("uid=0") {
+                log::write("ensure_su_access: KernelSU auto-grant succeeded via su + ksud");
+                return (true, "KernelSU: shell permanently granted SU access".into());
+            }
+        }
+        log::write("ensure_su_access: KernelSU detected but auto-grant failed, needs user action");
+        return (false, "KernelSU detected. Open KernelSU → Superuser → tap 'shell' → enable 'Auto-allow'".into());
+    }
+
+    // Step 4: Check for APatch
+    let apatch_exists = run_stdout(base_cmd(&adb_path()).args(["shell", "[", "-f", "/data/adb/apd", "]", "&&", "echo", "yes"]), 5000);
+    if apatch_exists.contains("yes") {
+        log::write("ensure_su_access: APatch detected, attempting auto-grant via apd");
+        let apd_out = run_stdout(base_cmd(&adb_path()).args(["shell", "su", "-c", "/data/adb/apd allow -add 2000"]), 10000);
+        if !apd_out.contains("denied") && !apd_out.contains("error") {
+            let verify = run_stdout(base_cmd(&adb_path()).args(["shell", "su", "-c", "id"]), 8000);
+            if verify.contains("uid=0") {
+                log::write("ensure_su_access: APatch auto-grant succeeded");
+                return (true, "APatch: shell permanently granted SU access".into());
+            }
+        }
+        return (false, "APatch detected. Open APatch → Superuser → tap 'shell' → enable 'Auto-allow'".into());
+    }
+
+    // Step 5: Check for Magisk
+    let magisk_exists = run_stdout(base_cmd(&adb_path()).args(["shell", "[", "-f", "/data/adb/magisk", "]", "&&", "echo", "yes"]), 5000)
+        .trim().to_string();
+    let magisk_db = run_stdout(base_cmd(&adb_path()).args(["shell", "[", "-f", "/data/adb/magisk.db", "]", "&&", "echo", "yes"]), 5000)
+        .trim().to_string();
+    if magisk_exists.contains("yes") || magisk_db.contains("yes") {
+        log::write("ensure_su_access: Magisk detected, cannot auto-grant");
+        return (false, "Magisk detected. Open Magisk → Superuser → tap 'shell' → Grant".into());
+    }
+
+    log::write("ensure_su_access: no supported root manager detected");
+    (false, "No supported root manager detected. Ensure the device is rooted.".into())
 }
 
 fn fastboot_devices() -> Vec<String> {
@@ -544,6 +630,10 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
             return Err(e);
         }
     };
+
+    // Auto-grant SU access for shell so user does not need to tap phone.
+    let (su_ok, su_msg) = ensure_su_access();
+    emit(&app, if su_ok { "SU access granted automatically" } else { &su_msg });
 
     let work = work_tmp_dir();
     let files_dir = toolkit_files_dir();
@@ -879,16 +969,16 @@ emit(app, "Waiting for device in fastboot mode...");
             break;
         }
     }
-    let fb_serial = match fb_serial {
+let mut fb_serial = match fb_serial {
         Some(d) => {
-            emit(app, "Waiting for device in fastboot mode... FOUND");
+            emit(&app, "Waiting for device in fastboot mode... FOUND");
             d
         }
         None => {
-            emit(app, "Waiting for device in fastboot mode... NOT FOUND");
+            emit(&app, "Waiting for device in fastboot mode... NOT FOUND");
             let (ok, msg) = check_fastboot_driver();
             if !ok {
-                emit(app, &msg);
+                emit(&app, &msg);
                 return Err(format!("Fastboot device not detected. {msg}"));
             }
             return Err("Fastboot device not detected after reboot.".into());
@@ -972,6 +1062,9 @@ pub fn anykernel(app: AppHandle, opts: AnyKernelOptions) -> Result<bool, String>
         })
     };
     emit(&app, "Reading AnyKernel zip... DONE");
+
+    // Auto-grant SU so AnyKernel script can run without phone interaction.
+    let (su_ok, su_msg) = ensure_su_access();
 
     let root = {
         let out = adb(&["shell", "su", "-c", "id"], 8000);
@@ -1059,20 +1152,13 @@ pub fn anykernel(app: AppHandle, opts: AnyKernelOptions) -> Result<bool, String>
         let _ = std::fs::remove_file(downloads_dir().join("busybox"));
         emit(&app, "Cleaning up... DONE");
 
-        emit(&app, "Flash complete, rebooting device...");
+emit(&app, "Flash complete, rebooting device...");
         adb(&["reboot"], 10000);
-emit(&app, "Cleaning up...");
-    let _ = std::fs::remove_file(downloads_dir().join(format!("{}_anykernel.img", chosen)));
-    emit(&app, "Cleaning up... DONE");
+        let elapsed = started.elapsed().as_secs();
+        emit(&app, format!("Elapsed Time: {}s", elapsed).as_str());
+        return Ok(true);
+    }
 
-    let elapsed = started.elapsed().as_secs();
-    emit(&app, format!("Elapsed Time: {}s", elapsed).as_str());
-    Ok(true)
-}
-
-    emit(&app, if root { "No update-binary; falling back to fastboot." } else { "No root detected; falling back to fastboot." });
-
-    // Extract a boot.img payload for fastboot.
     let chosen = {
         let file = std::fs::File::open(zip_path).map_err(|e| format!("Failed to open zip: {e}"))?;
         let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip: {e}"))?;

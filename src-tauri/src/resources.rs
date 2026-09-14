@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
 // Matches src-tauri/encrypt_resources.py: V 1 P e r S e r v I c e

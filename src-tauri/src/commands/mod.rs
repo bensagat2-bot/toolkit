@@ -439,6 +439,13 @@ pub async fn check_fastboot_driver() -> Result<(bool, String), String> {
 }
 
 #[command]
+pub async fn ensure_su_access() -> Result<(bool, String), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::utils::ensure_su_access())
+        .await
+        .map_err(|e| format!("SU access task failed: {e}"))?
+}
+
+#[command]
 pub async fn backup_list() -> Result<Vec<crate::services::backup::BackupCard>, String> {
     Ok(crate::services::backup::list())
 }
