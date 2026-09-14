@@ -173,6 +173,18 @@ const loading = ref(false)
 const source = ref('xiaomi')
 const search = ref('')
 const selectedItem = ref(null)
+const PURCHASED_KEY = 'v1per_purchased_links'
+
+function loadPurchased() {
+  try { return JSON.parse(localStorage.getItem(PURCHASED_KEY) || '{}') } catch { return {} }
+}
+
+function savePurchased(id, entry) {
+  const map = loadPurchased()
+  map[String(id)] = entry
+  localStorage.setItem(PURCHASED_KEY, JSON.stringify(map))
+}
+
 const credits = ref(store.account?.credits ?? 0)
 const copied = ref(false)
 const confirmingPurchase = ref(false)
@@ -187,7 +199,10 @@ const lastUpdated = ref('')
 
 const canExtract = computed(() => {
   const link = revealedLink.value
-  return !!link && (link.includes('/disk/s/') || link.includes('ota_full') || link.includes('ota-') || link.includes('images_') || link.endsWith('.tgz'))
+  if (!link) return false
+  if (link.includes('/disk/s/') || link.includes('ota_full') || link.includes('ota-') || link.includes('images_') || link.includes('.tgz')) return true
+  if (link.endsWith('.zip') || link.includes('.zip?') || link.includes('miui') || link.includes('firmware') || link.includes('rom')) return true
+  return true
 })
 
 // Builds the full FRBox URL with the password embedded, handling bare paths.
@@ -261,6 +276,12 @@ function openDetail(item) {
   revealedCode.value = ''
   errorMsg.value = ''
   showError.value = false
+  const saved = loadPurchased()[String(item.id)]
+  if (saved) {
+    revealedLink.value = saved.link
+    revealedCode.value = saved.code || ''
+    linkRevealed.value = true
+  }
 }
 
 function startPurchase() {
@@ -276,6 +297,7 @@ async function confirmDownload() {
     const result = await store.purchase(source.value, selectedItem.value.id)
     revealedLink.value = result.link
     revealedCode.value = result.extraction_code || ''
+    savePurchased(selectedItem.value.id, { link: result.link, code: result.extraction_code || '', source: source.value })
     credits.value = store.account?.credits ?? 0
     fetchFirmwares()
     setTimeout(() => {

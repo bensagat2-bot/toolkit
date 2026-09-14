@@ -90,11 +90,9 @@ export const useAccountStore = defineStore('account', () => {
       if (account.value.token) {
         const res = await fetch(`${API_BASE}/api/auth/me?token=${encodeURIComponent(account.value.token)}&_=${++nonce}`)
         if (res.status === 401) {
-          const body = await res.text().catch(() => '')
-          // Only revoke if server explicitly says session is invalid (not just transient 401)
-          if (body.toLowerCase().includes('invalid') || body.toLowerCase().includes('expired') || body.toLowerCase().includes('revoked')) {
-            banned.value = 'Your session has been revoked. Please sign in again.'
-          }
+          account.value.token = undefined
+          persist()
+          isAuthed.value = false
           return
         }
         const me = await res.json()
@@ -148,8 +146,7 @@ export const useAccountStore = defineStore('account', () => {
     const user = data?.user as UserPayload | undefined
     if (!user) throw new Error('Unexpected server response')
     if (user.status && user.status !== 'active') {
-      banned.value = 'Your account has been banned or suspended.'
-      return account.value
+      throw new Error('Your account has been banned or suspended.')
     }
     account.value = {
       id: user.id,
@@ -182,15 +179,13 @@ export const useAccountStore = defineStore('account', () => {
     })
     const data = await parseJson(res)
     if (res.status === 403 && data?.error) {
-      banned.value = typeof data.error === 'string' ? data.error : 'Your account has been banned or suspended.'
-      throw new Error('Account not active')
+      throw new Error(typeof data.error === 'string' ? data.error : 'Account not active')
     }
     if (!res.ok) throw apiError(data, 'Login failed')
     const user = data?.user as UserPayload | undefined
     if (!user) throw new Error('Unexpected server response')
     if (user.status && user.status !== 'active') {
-      banned.value = 'Your account has been banned or suspended.'
-      throw new Error('Account not active')
+      throw new Error('Your account has been banned or suspended.')
     }
     account.value = {
       id: user.id,
@@ -233,11 +228,10 @@ export const useAccountStore = defineStore('account', () => {
       if (String(msg).toLowerCase().includes('not active') || String(msg).toLowerCase().includes('banned')) {
         banned.value = 'Your account has been banned or suspended.'
       } else if (account.value) {
-        // Session revoked - show revoked screen without auto-logout.
-        banned.value = 'Your session has been revoked. Please sign in again.'
         account.value.token = undefined
         persist()
-        throw new Error('Session revoked. Please sign in again.')
+        isAuthed.value = false
+        throw new Error('Session expired. Please sign in again.')
       }
     }
     if (!res.ok) throw apiError(data, 'Purchase failed')

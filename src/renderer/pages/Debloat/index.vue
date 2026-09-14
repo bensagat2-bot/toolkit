@@ -83,7 +83,7 @@
     </div>
 
     <transition name="toast">
-      <div class="toast-msg" v-if="toast">{{ toast }}</div>
+      <div class="toast-msg" v-if="toast" :class="toastType">{{ toast }}</div>
     </transition>
   </div>
 </template>
@@ -98,6 +98,7 @@ const search = ref('')
 const filter = ref('all')
 const loading = ref(false)
 const toast = ref('')
+const toastType = ref('')
 
 const filteredApps = computed(() => {
   let list = apps.value
@@ -127,9 +128,10 @@ function deselectAll() {
   selected.value = []
 }
 
-function showToast(msg) {
+function showToast(msg, type = 'info') {
   toast.value = msg
-  setTimeout(() => { toast.value = '' }, 3000)
+  toastType.value = type
+  setTimeout(() => { toast.value = '' }, 4000)
 }
 
 async function loadApps() {
@@ -139,8 +141,9 @@ async function loadApps() {
     const result = await sendIpcToMain('debloat_list_packages')
     apps.value = result
     selected.value = []
+    showToast(`Loaded ${result.length} apps`, 'success')
   } catch (e) {
-    showToast(e?.message || 'Failed to load apps')
+    showToast(e?.message || 'Failed to load apps', 'error')
   }
   loading.value = false
 }
@@ -148,34 +151,46 @@ async function loadApps() {
 async function uninstallSelected() {
   if (!selected.value.length) return
   loading.value = true
+  let successCount = 0
+  let failCount = 0
   for (const pkg of [...selected.value]) {
     try {
       const result = await sendIpcToMain('debloat_uninstall', { package_name: pkg })
       apps.value = apps.value.filter(a => a.package_name !== pkg)
-      showToast(result)
+      successCount++
     } catch (e) {
-      showToast(`Failed: ${pkg} - ${e?.message || ''}`)
+      failCount++
+      showToast(`Failed: ${pkg} - ${e?.message || ''}`, 'error')
     }
   }
   selected.value = []
   loading.value = false
+  if (successCount > 0) {
+    showToast(`Uninstalled ${successCount} app(s)${failCount > 0 ? `, ${failCount} failed` : ''}`, failCount > 0 ? 'warn' : 'success')
+  }
 }
 
 async function enableSelected() {
   if (!selected.value.length) return
   loading.value = true
+  let successCount = 0
+  let failCount = 0
   for (const pkg of [...selected.value]) {
     try {
       const result = await sendIpcToMain('debloat_enable', { package_name: pkg })
       const app = apps.value.find(a => a.package_name === pkg)
       if (app) app.is_disabled = false
-      showToast(result)
+      successCount++
     } catch (e) {
-      showToast(`Failed: ${pkg} - ${e?.message || ''}`)
+      failCount++
+      showToast(`Failed: ${pkg} - ${e?.message || ''}`, 'error')
     }
   }
   selected.value = []
   loading.value = false
+  if (successCount > 0) {
+    showToast(`Restored ${successCount} app(s)${failCount > 0 ? `, ${failCount} failed` : ''}`, failCount > 0 ? 'warn' : 'success')
+  }
 }
 
 function iconColor(pkg) {
@@ -251,6 +266,9 @@ function iconColor(pkg) {
 .empty-state p { font-size: 12px; color: var(--text-secondary); margin: 0; }
 
 .toast-msg { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); z-index: 9999; padding: 10px 20px; border-radius: 8px; background: var(--bg-secondary); border: 1px solid var(--accent-primary); font-size: 12px; color: var(--text-primary); box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
+.toast-msg.error { border-color: #f44336; color: #f44336; }
+.toast-msg.success { border-color: #4caf50; color: #4caf50; }
+.toast-msg.warn { border-color: #ff9800; color: #ff9800; }
 
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--border-primary); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 12px; cursor: pointer; white-space: nowrap; transition: all 0.15s; }
 .btn:hover:not(:disabled) { border-color: var(--accent-primary); }

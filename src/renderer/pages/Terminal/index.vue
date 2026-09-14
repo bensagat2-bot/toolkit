@@ -9,7 +9,7 @@
           <button class="btn-link" @click="copyLog" :disabled="busy">Copy</button>
         </div>
       </div>
-      <div class="term-body" ref="bodyRef" @mousedown="focusInput">
+      <div class="term-body" ref="bodyRef" @mousedown="focusInput" @dragover.prevent="onDragOver" @dragleave.prevent="onDragLeave" @drop.prevent="onNativeDrop" :class="{ 'drag-over': dragOver }">
         <div v-for="(line, i) in lines" :key="i" :class="['term-line', line.kind]">
           <template v-if="line.kind === 'cmd'">
             <span class="prompt">$ v1per&gt;</span>
@@ -30,6 +30,8 @@
             @keydown.enter.prevent="runCommand"
             @keydown.up.prevent="historyPrev"
             @keydown.down.prevent="historyNext"
+            @dragover.prevent
+            @drop.prevent="onNativeDrop"
           />
         </div>
         <div v-if="busy" class="term-line busy">running...</div>
@@ -49,6 +51,7 @@ const lines = ref([])
 const busy = ref(false)
 const history = ref([])
 const historyIndex = ref(-1)
+const dragOver = ref(false)
 let unlistenDragDrop = null
 
 const deviceLabel = computed(() => {
@@ -106,9 +109,36 @@ function historyNext() {
 }
 
 function onDropPaths(paths) {
+  dragOver.value = false
   const quoted = paths.map((p) => `"${p}"`).join(' ')
   current.value = current.value ? `${current.value} ${quoted}` : quoted
   focusInput()
+}
+
+function onDragOver() {
+  dragOver.value = true
+}
+
+function onDragLeave() {
+  dragOver.value = false
+}
+
+function onNativeDrop(event) {
+  dragOver.value = false
+  const files = event.dataTransfer?.files
+  if (files && files.length > 0) {
+    const paths = []
+    for (let i = 0; i < files.length; i++) {
+      paths.push(files[i].path)
+    }
+    onDropPaths(paths)
+    return
+  }
+  const text = event.dataTransfer?.getData('text')
+  if (text) {
+    current.value = current.value ? `${current.value} "${text}"` : `"${text}"`
+    focusInput()
+  }
 }
 
 async function runCommand() {
@@ -224,6 +254,12 @@ onBeforeUnmount(() => {
   cursor: text;
   user-select: text;
   -webkit-user-select: text;
+  transition: background 0.2s, border-color 0.2s;
+}
+.term-body.drag-over {
+  background: color-mix(in srgb, var(--accent-primary) 8%, transparent);
+  outline: 2px dashed var(--accent-primary);
+  outline-offset: -4px;
 }
 
 .term-line {

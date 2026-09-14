@@ -146,7 +146,7 @@ fn check_bootloader_fastboot() -> String {
 
 fn check_root_adb(serial: &str) -> String {
     let which = adb(&["-s", serial, "shell", "which", "su"], 5000);
-    if !which.trim().is_empty() && !which.contains("not found") {
+    if !which.trim().is_empty() && !which.contains("not found") && !which.contains("No such file") {
         return "Rooted (su)".into();
     }
     let id = adb(&["-s", serial, "shell", "su", "-c", "id"], 5000);
@@ -154,11 +154,13 @@ fn check_root_adb(serial: &str) -> String {
         return "Rooted (working)".into();
     }
     let magisk = adb(&["-s", serial, "shell", "magisk", "-c"], 5000);
-    if !magisk.trim().is_empty() {
+    let magisk_trimmed = magisk.trim();
+    if !magisk_trimmed.is_empty() && !magisk_trimmed.contains("not found") && !magisk_trimmed.contains("No such file") && !magisk_trimmed.contains("Permission denied") {
         return "Rooted (Magisk)".into();
     }
     let ksu = adb(&["-s", serial, "shell", "ksud", "--version"], 5000);
-    if !ksu.trim().is_empty() {
+    let ksu_trimmed = ksu.trim();
+    if !ksu_trimmed.is_empty() && !ksu_trimmed.contains("not found") && !ksu_trimmed.contains("No such file") {
         return "Rooted (KernelSU)".into();
     }
     "Not Rooted".into()
