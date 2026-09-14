@@ -131,7 +131,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 {{ copied ? 'Copied!' : 'Copy Download Link' }}
               </button>
-              <button class="btn btn-primary" @click="openExtract" :disabled="!canExtract">
+              <button class="btn btn-primary" :class="{ clicked: extractClicked }" @click="openExtract" :disabled="!canExtract">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
                 Extract Partition
               </button>
@@ -173,17 +173,6 @@ const loading = ref(false)
 const source = ref('xiaomi')
 const search = ref('')
 const selectedItem = ref(null)
-const PURCHASED_KEY = 'v1per_purchased_links'
-
-function loadPurchased() {
-  try { return JSON.parse(localStorage.getItem(PURCHASED_KEY) || '{}') } catch { return {} }
-}
-
-function savePurchased(id, entry) {
-  const map = loadPurchased()
-  map[String(id)] = entry
-  localStorage.setItem(PURCHASED_KEY, JSON.stringify(map))
-}
 
 const credits = ref(store.account?.credits ?? 0)
 const copied = ref(false)
@@ -195,13 +184,12 @@ const revealedCode = ref('')
 const errorMsg = ref('')
 const showError = ref(false)
 const showExtract = ref(false)
+const extractClicked = ref(false)
 const lastUpdated = ref('')
 
 const canExtract = computed(() => {
   const link = revealedLink.value
   if (!link) return false
-  if (link.includes('/disk/s/') || link.includes('ota_full') || link.includes('ota-') || link.includes('images_') || link.endsWith('.tgz')) return true
-  if (link.endsWith('.zip') || link.includes('.zip?') || link.includes('miui') || link.includes('firmware') || link.includes('rom')) return true
   return true
 })
 
@@ -220,6 +208,8 @@ function frboxUrl(link, pwd) {
 }
 
 function openExtract() {
+  extractClicked.value = true
+  setTimeout(() => { extractClicked.value = false }, 300)
   showExtract.value = true
 }
 
@@ -276,12 +266,6 @@ function openDetail(item) {
   revealedCode.value = ''
   errorMsg.value = ''
   showError.value = false
-  const saved = loadPurchased()[String(item.id)]
-  if (saved) {
-    revealedLink.value = saved.link
-    revealedCode.value = saved.code || ''
-    linkRevealed.value = true
-  }
 }
 
 function startPurchase() {
@@ -297,7 +281,6 @@ async function confirmDownload() {
     const result = await store.purchase(source.value, selectedItem.value.id)
     revealedLink.value = result.link
     revealedCode.value = result.extraction_code || ''
-    savePurchased(selectedItem.value.id, { link: result.link, code: result.extraction_code || '', source: source.value })
     credits.value = store.account?.credits ?? 0
     fetchFirmwares()
     setTimeout(() => {
@@ -441,6 +424,8 @@ onBeforeUnmount(() => {
 .link-available { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; .btn { width: 100%; } }
 .purchase-actions { display: flex; flex-direction: column; gap: 8px; width: 100%; .btn { width: 100%; } }
 .link-note { font-size: 12px; color: var(--text-secondary); strong { font-family: monospace; color: var(--accent-primary); } }
+.btn-primary.clicked { animation: btnPulse 0.3s ease; }
+@keyframes btnPulse { 0% { transform: scale(1); } 50% { transform: scale(0.96); } 100% { transform: scale(1); } }
 .no-link-msg { font-size: 12px; color: var(--text-secondary); text-align: center; }
 .processing-section { gap: 14px; padding: 22px 14px; }
 .processing-ring { width: 34px; height: 34px; border: 3px solid var(--border-primary); border-top-color: var(--accent-primary); border-radius: 50%; animation: spin 0.9s linear infinite; }

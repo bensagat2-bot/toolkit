@@ -169,31 +169,63 @@ pub fn uninstall_package(package_name: String) -> Result<String, String> {
     let serial = detect_serial().ok_or("No ADB device detected")?;
 
     let result = adb_serial(&serial, &["shell", "pm", "uninstall", "--user", "0", &package_name], 15000);
-    if result.contains("Success") || result.contains("success") {
+    if !result.contains("Failure") && !result.contains("Failed") && !result.contains("Error") {
         return Ok(format!("Uninstalled: {package_name}"));
     }
+    let last_error = result.trim().to_string();
 
     let result2 = adb_serial(&serial, &["shell", "cmd", "package", "uninstall", "--user", "0", &package_name], 15000);
-    if result2.contains("Success") || result2.contains("success") {
+    if !result2.contains("Failure") && !result2.contains("Failed") && !result2.contains("Error") {
         return Ok(format!("Uninstalled: {package_name}"));
     }
+    let last_error2 = result2.trim().to_string();
 
     let result3 = adb_serial(&serial, &["shell", "pm", "disable-user", "--user", "0", &package_name], 10000);
-    if result3.contains("disabled") || result3.contains("success") || result3.contains("new state") {
+    if result3.contains("disabled") || result3.contains("new state") {
         return Ok(format!("Disabled: {package_name}"));
     }
 
     let result4 = adb_serial(&serial, &["shell", "su", "-c", &format!("pm uninstall --user 0 {}", package_name)], 15000);
-    if result4.contains("Success") || result4.contains("success") {
+    if !result4.contains("Failure") && !result4.contains("Failed") && !result4.contains("Error") {
         return Ok(format!("Uninstalled (root): {package_name}"));
     }
 
     let result5 = adb_serial(&serial, &["shell", "su", "-c", &format!("cmd package uninstall --user 0 {}", package_name)], 15000);
-    if result5.contains("Success") || result5.contains("success") {
+    if !result5.contains("Failure") && !result5.contains("Failed") && !result5.contains("Error") {
         return Ok(format!("Uninstalled (root): {package_name}"));
     }
 
-    Err(format!("Failed to remove {package_name}"))
+    let result6 = adb_serial(&serial, &["shell", "pm", "uninstall", "-k", "--user", "0", &package_name], 15000);
+    if !result6.contains("Failure") && !result6.contains("Failed") && !result6.contains("Error") {
+        return Ok(format!("Uninstalled (keep data): {package_name}"));
+    }
+
+    let all_errors = format!("pm: {last_error} | cmd: {last_error2}");
+    Err(format!("Failed to remove {package_name}: {all_errors}"))
+}
+
+pub fn get_icons(package_names: Vec<String>) -> HashMap<String, String> {
+    let serial = match detect_serial() {
+        Some(s) => s,
+        None => return HashMap::new(),
+    };
+    let mut icons = HashMap::new();
+    for pkg in &package_names {
+        let output = adb_serial(&serial, &["shell", "cmd", "package", "resolve-app-info", "--user", "0", pkg], 8000);
+        let line = output.lines().find(|l| l.trim().starts_with("<app-info"));
+        if let Some(xml) = line {
+            if let Some(start) = xml.find("icon=\"") {
+                let rest = &xml[start + 6..];
+                if let Some(end) = rest.find('"') {
+                    let b64 = &rest[..end];
+                    if !b64.is_empty() && b64.len() > 50 {
+                        icons.insert(pkg.clone(), b64.to_string());
+                    }
+                }
+            }
+        }
+    }
+    icons
 }
 
 pub fn enable_package(package_name: String) -> Result<String, String> {

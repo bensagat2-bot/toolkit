@@ -106,7 +106,8 @@ const done = ref('')
 const extractError = ref('')
 
 const isFrbox = computed(() => props.url.includes('/disk/s/'))
-const isTgz = computed(() => !isFrbox.value && (props.url.includes('images_') || props.url.endsWith('.tgz')))
+const isTgz = computed(() => !isFrbox.value && props.url.endsWith('.tgz'))
+const isFastbootZip = computed(() => !isFrbox.value && !isTgz.value && (props.url.includes('images_') || props.url.includes('fastboot')))
 const showPartList = computed(() => !isTgz.value)
 
 const canStart = computed(() => {
@@ -176,6 +177,13 @@ async function start() {
           name: name,
           outputPath: path,
         })
+      } else if (isFastbootZip.value) {
+        const path = `${outputDir.value}\\${stem}.img`
+        result = await sendIpcToMain('ota_extract_fastboot_image', {
+          url: props.url,
+          imageName: name,
+          outputPath: path,
+        })
       } else if (isTgz.value) {
         const path = `${outputDir.value}\\${stem}.img`
         result = await sendIpcToMain('ota_extract_tgz', {
@@ -215,19 +223,22 @@ onMounted(async () => {
     loaded.value = true
     return
   }
-try {
-      let list
-      if (isFrbox.value) {
-        const entries = await sendIpcToMain('frbox_list_partitions', {
-          url: props.url,
-          pwd: props.pwd || null,
-        })
-        list = (entries || [])
-          .filter((e) => e.uncompressed_size > 0)
-          .map((e) => ({ name: e.name, size_bytes: e.uncompressed_size }))
-      } else {
-        list = await sendIpcToMain('ota_list_partitions', { url: props.url })
-      }
+  try {
+    let list
+    if (isFrbox.value) {
+      const entries = await sendIpcToMain('frbox_list_partitions', {
+        url: props.url,
+        pwd: props.pwd || null,
+      })
+      list = (entries || [])
+        .filter((e) => e.uncompressed_size > 0)
+        .map((e) => ({ name: e.name, size_bytes: e.uncompressed_size }))
+    } else if (isFastbootZip.value) {
+      const images = await sendIpcToMain('ota_list_fastboot_images', { url: props.url })
+      list = (images || []).map((e) => ({ name: e.name, size_bytes: e.size_bytes }))
+    } else {
+      list = await sendIpcToMain('ota_list_partitions', { url: props.url })
+    }
     partitions.value = list
     selectedNames.value = list.map((p) => p.name)
     loaded.value = true

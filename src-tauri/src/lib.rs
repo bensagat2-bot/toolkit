@@ -120,6 +120,7 @@ pub fn run() {
             commands::debloat_list_packages,
             commands::debloat_uninstall,
             commands::debloat_enable,
+            commands::debloat_get_icons,
             commands::xiaomi_detect_device,
             commands::xiaomi_get_product,
             commands::xiaomi_get_token,

@@ -47,8 +47,9 @@
             :style="{ '--i': i }"
           >
             <div class="app-card-inner">
-              <div class="app-icon" :style="{ background: iconColor(app.package_name) }">
-                <span class="app-icon-text">{{ app.app_name.charAt(0).toUpperCase() }}</span>
+              <div class="app-icon" :style="{ background: icons[app.package_name] ? 'transparent' : iconColor(app.package_name) }">
+                <img v-if="icons[app.package_name]" :src="'data:image/png;base64,' + icons[app.package_name]" class="app-icon-img" />
+                <span v-else class="app-icon-text">{{ app.app_name.charAt(0).toUpperCase() }}</span>
               </div>
               <div class="app-info">
                 <div class="app-name" :title="app.app_name">{{ app.app_name }}</div>
@@ -93,6 +94,7 @@ import { ref, computed, nextTick } from 'vue'
 import { sendIpcToMain } from '@renderer/utils/ipc'
 
 const apps = ref([])
+const icons = ref({})
 const selected = ref([])
 const search = ref('')
 const filter = ref('all')
@@ -142,10 +144,20 @@ async function loadApps() {
     apps.value = result
     selected.value = []
     showToast(`Loaded ${result.length} apps`, 'success')
+    fetchIcons(result.map((a) => a.package_name))
   } catch (e) {
     showToast(e?.message || 'Failed to load apps', 'error')
   }
   loading.value = false
+}
+
+async function fetchIcons(packages) {
+  try {
+    const batch = await sendIpcToMain('debloat_get_icons', { packageNames: packages })
+    if (batch) icons.value = batch
+  } catch {
+    // Icons are optional, fallback to letter+color
+  }
 }
 
 async function uninstallSelected() {
@@ -235,7 +247,8 @@ function iconColor(pkg) {
 
 .app-card-inner { display: flex; align-items: center; gap: 10px; padding: 10px; }
 
-.app-icon { flex: none; width: 38px; height: 38px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+.app-icon { flex: none; width: 38px; height: 38px; border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.app-icon-img { width: 38px; height: 38px; object-fit: cover; border-radius: 8px; }
 .app-icon-text { font-size: 18px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.2); }
 
 .app-info { flex: 1; min-width: 0; }

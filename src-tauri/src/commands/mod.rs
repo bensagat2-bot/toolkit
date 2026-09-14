@@ -506,6 +506,11 @@ pub async fn debloat_enable(package_name: String) -> Result<String, String> {
         .map_err(|e| format!("Debloat task failed: {e}"))?
 }
 
+#[command]
+pub async fn debloat_get_icons(package_names: Vec<String>) -> std::collections::HashMap<String, String> {
+    crate::services::debloat::get_icons(package_names)
+}
+
 // ── Xiaomi Commands ──────────────────────────────────────────
 
 #[command]
