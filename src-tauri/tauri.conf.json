@@ -40,7 +40,7 @@
     "resources": [],
     "windows": {
       "nsis": {
-        "installMode": "machine",
+        "installMode": "perMachine",
         "displayLanguageSelector": true,
         "installerHooks": "installer-hooks.nsh"
       }
