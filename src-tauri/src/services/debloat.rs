@@ -44,7 +44,7 @@ fn parse_package_list_from_paths(output: &str) -> Vec<(String, String)> {
         let line = line.trim();
         if !line.starts_with("package:") { continue; }
         let rest = &line["package:".len()..];
-        if let Some(eq_pos) = rest.find('=') {
+        if let Some(eq_pos) = rest.rfind('=') {
             let apk_path = rest[..eq_pos].to_string();
             let pkg = rest[eq_pos + 1..].trim().to_string();
             let app_name = extract_app_name_from_apk_path(&apk_path);
@@ -80,7 +80,7 @@ fn parse_disabled_set(output: &str) -> HashSet<String> {
     for line in output.lines() {
         let l = line.trim();
         if l.starts_with("package:") {
-            if let Some(eq) = l.find('=') {
+            if let Some(eq) = l.rfind('=') {
                 set.insert(l[eq + 1..].trim().to_string());
             }
         }

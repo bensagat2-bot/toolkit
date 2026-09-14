@@ -200,7 +200,7 @@ const lastUpdated = ref('')
 const canExtract = computed(() => {
   const link = revealedLink.value
   if (!link) return false
-  if (link.includes('/disk/s/') || link.includes('ota_full') || link.includes('ota-') || link.includes('images_') || link.includes('.tgz')) return true
+  if (link.includes('/disk/s/') || link.includes('ota_full') || link.includes('ota-') || link.includes('images_') || link.endsWith('.tgz')) return true
   if (link.endsWith('.zip') || link.includes('.zip?') || link.includes('miui') || link.includes('firmware') || link.includes('rom')) return true
   return true
 })

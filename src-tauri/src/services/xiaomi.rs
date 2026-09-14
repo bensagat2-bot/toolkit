@@ -154,13 +154,11 @@ fn check_root_adb(serial: &str) -> String {
         return "Rooted (working)".into();
     }
     let magisk = adb(&["-s", serial, "shell", "magisk", "-c"], 5000);
-    let magisk_trimmed = magisk.trim();
-    if !magisk_trimmed.is_empty() && !magisk_trimmed.contains("not found") && !magisk_trimmed.contains("No such file") && !magisk_trimmed.contains("Permission denied") {
+    if !magisk.trim().is_empty() && !magisk.contains("not found") {
         return "Rooted (Magisk)".into();
     }
     let ksu = adb(&["-s", serial, "shell", "ksud", "--version"], 5000);
-    let ksu_trimmed = ksu.trim();
-    if !ksu_trimmed.is_empty() && !ksu_trimmed.contains("not found") && !ksu_trimmed.contains("No such file") {
+    if !ksu.trim().is_empty() && !ksu.contains("not found") {
         return "Rooted (KernelSU)".into();
     }
     "Not Rooted".into()

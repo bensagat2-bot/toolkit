@@ -181,8 +181,8 @@ onMounted(async () => {
   push('info', 'V1per terminal. Type adb/fastboot commands. Drag & drop a file to insert its path.')
   push('info', 'Try: adb devices | fastboot devices | adb shell getprop ro.product.model')
   await rendererOn('term:output', onOutput)
-  const { getCurrentWebview } = await import('@tauri-apps/api/webview')
-  unlistenDragDrop = await getCurrentWebview().onDragDropEvent((event) => {
+  const { getCurrentWindow } = await import('@tauri-apps/api/window')
+  unlistenDragDrop = await getCurrentWindow().onDragDropEvent((event) => {
     if (event.payload.type === 'drop') {
       onDropPaths(event.payload.paths)
     }

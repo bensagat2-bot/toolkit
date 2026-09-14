@@ -860,7 +860,12 @@ pub fn extract_from_tgz(
         format!("{image_name}.img")
     };
 
-    let c = client();
+    let c = reqwest::blocking::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(7200))
+        .build()
+        .map_err(|e| format!("client build failed: {e}"))?;
     let resp = c
         .get(url)
         .send()
