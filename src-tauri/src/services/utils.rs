@@ -632,8 +632,7 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     };
 
     // Auto-grant SU access for shell so user does not need to tap phone.
-    let (su_ok, su_msg) = ensure_su_access();
-    emit(&app, if su_ok { "SU access granted automatically" } else { &su_msg });
+    let (_su_ok, _su_msg) = ensure_su_access();
 
     let work = work_tmp_dir();
     let files_dir = toolkit_files_dir();
@@ -1064,7 +1063,7 @@ pub fn anykernel(app: AppHandle, opts: AnyKernelOptions) -> Result<bool, String>
     emit(&app, "Reading AnyKernel zip... DONE");
 
     // Auto-grant SU so AnyKernel script can run without phone interaction.
-    let (su_ok, su_msg) = ensure_su_access();
+    let (_su_ok, _su_msg) = ensure_su_access();
 
     let root = {
         let out = adb(&["shell", "su", "-c", "id"], 8000);
