@@ -27,12 +27,16 @@ import PlayBar from '@/components/layout/PlayBar.vue'
 import AuthPage from '@/pages/Auth/index.vue'
 import Banned from '@/pages/Auth/Banned.vue'
 import { useAccountStore } from '@/store/accountStore'
+import { sendIpcToMain } from '@/utils/ipc'
 
 const store = useAccountStore()
 
 onMounted(() => {
   store.init()
   store.checkStatus()
+  // Pre-warm HWID and PC info caches so login/register don't freeze on PowerShell WMI queries
+  sendIpcToMain('get_hwid').catch(() => {})
+  sendIpcToMain('get_pc_info').catch(() => {})
 })
 </script>
 

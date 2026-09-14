@@ -90,9 +90,12 @@ pub fn get_hwid() -> String {
         info.disk_serial, info.board_serial, info.mac, info.machine_guid
     );
     if seed.trim_matches('|').is_empty() {
+        crate::log::write("HWID: no hardware data available, using UNKNOWN-HWID");
         return "UNKNOWN-HWID".to_string();
     }
-    sha256_hex(&seed)
+    let hwid = sha256_hex(&seed);
+    crate::log::write(&format!("HWID generated ({})", &hwid[..8]));
+    hwid
 }
 
 #[cfg(not(target_os = "windows"))]

@@ -959,3 +959,191 @@ fn skip_bytes(r: &mut impl std::io::Read, mut n: u64) -> Result<(), String> {
     }
     Ok(())
 }
+
+// ---------- Fastboot .zip image listing (remote, no download) ----------
+
+#[derive(Clone, Serialize)]
+pub struct FastbootImageInfo {
+    pub name: String,
+    pub size_bytes: u64,
+}
+
+fn list_remote_zip_images(c: &Client, url: &str) -> Result<Vec<FastbootImageInfo>, String> {
+    let resp = c.get(url).header("Range", "bytes=0-0").send().map_err(|e| format!("head failed: {e}"))?;
+    let total = resp.headers().get("content-range")
+        .and_then(|v| v.to_str().ok()).and_then(|v| v.rsplit('/').next())
+        .and_then(|v| v.trim().parse::<u64>().ok()).ok_or("cannot determine remote file size")?;
+
+    let tail_start = total.saturating_sub(22 + 65535 + 20);
+    let tail = fetch_range(c, url, tail_start, total - 1)?;
+    let mut eocd = None;
+    let mut i = tail.len();
+    while i >= 4 {
+        i -= 1;
+        if tail[i] == 0x50 && tail[i + 1] == 0x4b && tail[i + 2] == 0x05 && tail[i + 3] == 0x06 { eocd = Some(i); break; }
+    }
+    let eocd = eocd.ok_or("EOCD not found")?;
+    let mut cd_size = u32le(&tail, eocd + 12) as u64;
+    let mut cd_offset = u32le(&tail, eocd + 16) as u64;
+    let total_entries = u16le(&tail, eocd + 10) as u64;
+
+    if cd_offset == 0xFFFF_FFFF || cd_size == 0xFFFF_FFFF || total_entries == 0xFFFF {
+        let locator = eocd.checked_sub(20).ok_or("ZIP64 locator not found")?;
+        if u32le(&tail, locator) != 0x0706_4b50 { return Err("ZIP64 locator missing".to_string()); }
+        let z64_off = u64le(&tail, locator + 8);
+        let zrec = fetch_range(c, url, z64_off, z64_off + 55)?;
+        if zrec.len() < 56 || u32le(&zrec, 0) != 0x0606_4b50 { return Err("ZIP64 EOCD record corrupt".to_string()); }
+        cd_size = u64le(&zrec, 40);
+        cd_offset = u64le(&zrec, 48);
+    }
+    if cd_size > 64 * 1024 * 1024 { return Err("central directory too large".to_string()); }
+
+    let cd = fetch_range(c, url, cd_offset, cd_offset + cd_size - 1)?;
+    let mut entries = Vec::new();
+    let mut p = 0usize;
+    while p + 46 <= cd.len() {
+        if &cd[p..p + 4] != b"PK\x01\x02" { break; }
+        let name_len = u16le(&cd, p + 28) as usize;
+        let extra_len = u16le(&cd, p + 30) as usize;
+        let comment_len = u16le(&cd, p + 32) as usize;
+        let mut local_offset = u32le(&cd, p + 42) as u64;
+        let mut size = u32le(&cd, p + 24) as u64;
+        let compressed_is_z64 = u32le(&cd, p + 20) == 0xFFFF_FFFF;
+        if p + 46 + name_len > cd.len() { break; }
+        let name = String::from_utf8_lossy(&cd[p + 46..p + 46 + name_len]).to_string();
+
+        if size == 0xFFFF_FFFF || local_offset == 0xFFFF_FFFF {
+            let extra = &cd[p + 46 + name_len..p + 46 + name_len + extra_len];
+            let mut q = 0usize;
+            while q + 4 <= extra.len() {
+                let id = u16le(extra, q);
+                let flen = u16le(extra, q + 2) as usize;
+                let ds = q + 4;
+                if id == 0x0001 {
+                    let mut k = 0usize;
+                    if size == 0xFFFF_FFFF && ds + k + 8 <= extra.len() { size = u64le(extra, ds + k); k += 8; }
+                    if compressed_is_z64 && ds + k + 8 <= extra.len() { k += 8; }
+                    if local_offset == 0xFFFF_FFFF && ds + k + 8 <= extra.len() { local_offset = u64le(extra, ds + k); }
+                    break;
+                }
+                q += 4 + flen;
+            }
+        }
+
+        if name.to_lowercase().ends_with(".img") {
+            let stem = name.rsplit('/').next().unwrap_or(&name).trim_end_matches(".img").to_string();
+            entries.push(FastbootImageInfo { name: stem, size_bytes: size });
+        }
+        p += 46 + name_len + extra_len + comment_len;
+    }
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(entries)
+}
+
+/// Lists all .img files in a remote fastboot .zip.
+pub fn list_fastboot_images(url: &str) -> Result<Vec<FastbootImageInfo>, String> {
+    let c = client();
+    list_remote_zip_images(&c, url)
+}
+
+/// Extracts a single .img from a remote fastboot .zip using range requests.
+pub fn extract_fastboot_image(url: &str, image_name: &str, output_path: &str) -> Result<String, String> {
+    let name = if image_name.ends_with(".img") { image_name.to_string() } else { format!("{image_name}.img") };
+    let c = client();
+
+    let resp = c.get(url).header("Range", "bytes=0-0").send().map_err(|e| format!("head failed: {e}"))?;
+    let total = resp.headers().get("content-range")
+        .and_then(|v| v.to_str().ok()).and_then(|v| v.rsplit('/').next())
+        .and_then(|v| v.trim().parse::<u64>().ok()).ok_or("cannot determine remote file size")?;
+
+    let tail_start = total.saturating_sub(22 + 65535 + 20);
+    let tail = fetch_range(&c, url, tail_start, total - 1)?;
+    let mut eocd = None;
+    let mut i = tail.len();
+    while i >= 4 {
+        i -= 1;
+        if tail[i] == 0x50 && tail[i + 1] == 0x4b && tail[i + 2] == 0x05 && tail[i + 3] == 0x06 { eocd = Some(i); break; }
+    }
+    let eocd = eocd.ok_or("EOCD not found")?;
+
+    let mut cd_size = u32le(&tail, eocd + 12) as u64;
+    let mut cd_offset = u32le(&tail, eocd + 16) as u64;
+    let total_entries = u16le(&tail, eocd + 10) as u64;
+    if cd_offset == 0xFFFF_FFFF || cd_size == 0xFFFF_FFFF || total_entries == 0xFFFF {
+        let locator = eocd.checked_sub(20).ok_or("ZIP64 locator not found")?;
+        if u32le(&tail, locator) != 0x0706_4b50 { return Err("ZIP64 locator missing".to_string()); }
+        let z64_off = u64le(&tail, locator + 8);
+        let zrec = fetch_range(&c, url, z64_off, z64_off + 55)?;
+        if zrec.len() < 56 || u32le(&zrec, 0) != 0x0606_4b50 { return Err("ZIP64 EOCD record corrupt".to_string()); }
+        cd_size = u64le(&zrec, 40);
+        cd_offset = u64le(&zrec, 48);
+    }
+    if cd_size > 64 * 1024 * 1024 { return Err("central directory too large".to_string()); }
+
+    let cd = fetch_range(&c, url, cd_offset, cd_offset + cd_size - 1)?;
+    let mut target_entry: Option<(u64, u64)> = None;
+    let mut p = 0usize;
+    while p + 46 <= cd.len() {
+        if &cd[p..p + 4] != b"PK\x01\x02" { break; }
+        let name_len = u16le(&cd, p + 28) as usize;
+        let extra_len = u16le(&cd, p + 30) as usize;
+        let comment_len = u16le(&cd, p + 32) as usize;
+        let mut local_offset = u32le(&cd, p + 42) as u64;
+        let mut size = u32le(&cd, p + 24) as u64;
+        let compressed_is_z64 = u32le(&cd, p + 20) == 0xFFFF_FFFF;
+        if p + 46 + name_len > cd.len() { break; }
+        let raw_name = String::from_utf8_lossy(&cd[p + 46..p + 46 + name_len]).to_string();
+        let file_name = raw_name.rsplit('/').next().unwrap_or(&raw_name).to_string();
+
+        if size == 0xFFFF_FFFF || local_offset == 0xFFFF_FFFF {
+            let extra = &cd[p + 46 + name_len..p + 46 + name_len + extra_len];
+            let mut q = 0usize;
+            while q + 4 <= extra.len() {
+                let id = u16le(extra, q);
+                let flen = u16le(extra, q + 2) as usize;
+                let ds = q + 4;
+                if id == 0x0001 {
+                    let mut k = 0usize;
+                    if size == 0xFFFF_FFFF && ds + k + 8 <= extra.len() { size = u64le(extra, ds + k); k += 8; }
+                    if compressed_is_z64 && ds + k + 8 <= extra.len() { k += 8; }
+                    if local_offset == 0xFFFF_FFFF && ds + k + 8 <= extra.len() { local_offset = u64le(extra, ds + k); }
+                    break;
+                }
+                q += 4 + flen;
+            }
+        }
+
+        let match_name = name.trim_end_matches(".img").to_lowercase();
+        let raw_lower = file_name.trim_end_matches(".img").to_lowercase();
+        if raw_lower == match_name || file_name == name || raw_name == name {
+            target_entry = Some((local_offset, size));
+            break;
+        }
+        p += 46 + name_len + extra_len + comment_len;
+    }
+
+    let (local_header_offset, size) = target_entry.ok_or_else(|| format!("Image \"{name}\" not found in fastboot archive"))?;
+
+    let lh = fetch_range(&c, url, local_header_offset, local_header_offset + 29)?;
+    if lh.len() < 30 || &lh[0..4] != b"PK\x03\x04" { return Err("invalid local header".to_string()); }
+    let name_len = u16le(&lh, 26) as u64;
+    let extra_len = u16le(&lh, 28) as u64;
+    let data_offset = local_header_offset + 30 + name_len + extra_len;
+
+    let out = std::path::Path::new(output_path);
+    if let Some(parent) = out.parent() { std::fs::create_dir_all(parent).map_err(|e| e.to_string())?; }
+    let mut out_f = std::fs::File::create(out).map_err(|e| e.to_string())?;
+
+    let mut offset = data_offset;
+    let mut remaining = size;
+    let chunk_size = 4 * 1024 * 1024;
+    while remaining > 0 {
+        let end = (offset + remaining.min(chunk_size) - 1).min(offset + remaining - 1);
+        let data = fetch_range(&c, url, offset, end)?;
+        out_f.write_all(&data).map_err(|e| e.to_string())?;
+        offset += data.len() as u64;
+        remaining -= data.len() as u64;
+    }
+
+    Ok(format!("{name} saved"))
+}

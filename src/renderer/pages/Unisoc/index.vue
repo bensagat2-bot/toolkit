@@ -154,8 +154,18 @@ const browseFolder = async () => {
   folderPath.value = p
   try {
     const data = await sendIpcToMain('unisoc_scan_folder', { path: folderPath.value })
-    partitions.value = data.partitions || []
-    selected.value = partitions.value.map((p) => ({ name: p.name, file: p.file }))
+    const raw = data.partitions || []
+    // Deduplicate by partition name
+    const seen = new Set()
+    const deduped = []
+    for (const part of raw) {
+      if (!seen.has(part.name)) {
+        seen.add(part.name)
+        deduped.push(part)
+      }
+    }
+    partitions.value = deduped
+    selected.value = deduped.map((p) => ({ name: p.name, file: p.file }))
   } catch (e) {
     console.error('Scan folder failed:', e)
     errorMsg.value = 'Failed to scan firmware folder.'

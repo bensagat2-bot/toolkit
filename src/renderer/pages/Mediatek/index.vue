@@ -126,8 +126,18 @@ async function loadScatter() {
   selected.value = []
   try {
     const data = await sendIpcToMain('mtk_load_scatter', { path: scatterPath.value })
-    partitions.value = data.partitions || []
-    selected.value = partitions.value.filter((p) => p.download).map((p) => p.name)
+    const raw = data.partitions || []
+    // Deduplicate by name: keep first occurrence
+    const seen = new Set()
+    const deduped = []
+    for (const p of raw) {
+      if (!seen.has(p.name)) {
+        seen.add(p.name)
+        deduped.push(p)
+      }
+    }
+    partitions.value = deduped
+    selected.value = deduped.filter((p) => p.download).map((p) => p.name)
   } catch (e) {
     partitions.value = []
   }

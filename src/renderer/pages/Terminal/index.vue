@@ -9,7 +9,7 @@
           <button class="btn-link" @click="copyLog" :disabled="busy">Copy</button>
         </div>
       </div>
-      <div class="term-body" ref="bodyRef">
+      <div class="term-body" ref="bodyRef" @mousedown="focusInput">
         <div v-for="(line, i) in lines" :key="i" :class="['term-line', line.kind]">
           <template v-if="line.kind === 'cmd'">
             <span class="prompt">$ v1per&gt;</span>
@@ -223,11 +223,14 @@ onBeforeUnmount(() => {
   line-height: 1.7;
   cursor: text;
   user-select: text;
+  -webkit-user-select: text;
 }
 
 .term-line {
   white-space: pre-wrap;
   word-break: break-all;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .term-line.cmd {

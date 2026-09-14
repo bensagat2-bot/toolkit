@@ -1,8 +1,22 @@
 mod commands;
 mod config;
+mod log;
 mod protection;
 mod resources;
 mod services;
+
+#[cfg(windows)]
+fn ensure_admin() {
+    extern "system" {
+        fn IsUserAnAdmin() -> i32;
+    }
+    let is_admin = unsafe { IsUserAnAdmin() != 0 };
+    if is_admin {
+        log::write("Running as administrator: YES");
+    } else {
+        log::write("Running as administrator: NO");
+    }
+}
 
 // Release bundled binaries (adb server, fastboot, scrcpy, spd_dump) when the
 // app exits so an upgrade/reinstall can overwrite them without file-lock errors.
@@ -23,6 +37,11 @@ fn kill_locked_tools() {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     protection::init();
+    log::init();
+    log::write("Application started");
+
+    #[cfg(windows)]
+    ensure_admin();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -42,6 +61,8 @@ pub fn run() {
             commands::ota_list_partitions,
             commands::ota_extract_partition,
             commands::ota_extract_tgz,
+            commands::ota_list_fastboot_images,
+            commands::ota_extract_fastboot_image,
             commands::frbox_list_partitions,
             commands::frbox_extract_partition,
             commands::detect_device,
@@ -89,6 +110,7 @@ pub fn run() {
             commands::utils_force_fastboot,
             commands::utils_scrcpy,
             commands::term_run,
+            commands::check_fastboot_driver,
             commands::backup_list,
             commands::backup_start,
             commands::backup_rename,

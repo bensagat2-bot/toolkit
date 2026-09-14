@@ -431,16 +431,37 @@ pub(crate) fn device_prop(serial: &str, prop: &str) -> String {
 
 fn fastboot_devices() -> Vec<String> {
     let out = fastboot(&["devices"], 8000);
-    out.lines()
-        .filter_map(|l| {
-            let t = l.trim();
-            if t.is_empty() || t.contains("waiting") || t.contains("no permission") {
-                return None;
-            }
-            let parts: Vec<&str> = t.split_whitespace().collect();
-            if parts.is_empty() { None } else { Some(parts[0].to_string()) }
-        })
-        .collect()
+    let mut result = Vec::new();
+    for line in out.lines() {
+        let t = line.trim();
+        if t.is_empty() || t.contains("waiting") {
+            continue;
+        }
+        if t.contains("no permission") {
+            continue;
+        }
+        let parts: Vec<&str> = t.split_whitespace().collect();
+        if !parts.is_empty() {
+            result.push(parts[0].to_string());
+        }
+    }
+    result
+}
+
+/// Checks if fastboot is operational and detects common driver issues.
+pub fn check_fastboot_driver() -> (bool, String) {
+    let exe = fastboot_path();
+    if !std::path::Path::new(&exe).exists() && exe == "fastboot.exe" {
+        return (false, "fastboot: bundled platform-tools missing (reinstall the toolkit)".into());
+    }
+    let out = run_stdout(base_cmd(&exe).args(["devices"]), 8000);
+    if out.contains("no permission") {
+        (false, "fastboot: device detected but no permission. Re-run as administrator or install fastboot driver.".into())
+    } else if out.trim().is_empty() || out.contains("waiting") {
+        (false, "fastboot: no devices found. Ensure the device is in bootloader mode and the fastboot driver is installed.".into())
+    } else {
+        (true, String::new())
+    }
 }
 
 // Reads `fastboot getvar unlocked` live and returns whether the value is "yes".
@@ -848,24 +869,29 @@ fn flash_patched(app: &AppHandle, serial: &str, partition: &str, patched_local: 
     adb_serial(serial, &["reboot", "bootloader"], 15000);
     emit(app, "Rebooting device to bootloader mode... DONE");
 
-    emit(app, "Waiting for device in fastboot mode...");
+emit(app, "Waiting for device in fastboot mode...");
     let mut fb_serial = None;
-    for _ in 0..20 {
-        std::thread::sleep(std::time::Duration::from_secs(2));
+    for _ in 0..40 {
+        std::thread::sleep(std::time::Duration::from_secs(1));
         let devs = fastboot_devices();
         if let Some(d) = devs.first() {
             fb_serial = Some(d.clone());
             break;
         }
     }
-    let mut fb_serial = match fb_serial {
+    let fb_serial = match fb_serial {
         Some(d) => {
             emit(app, "Waiting for device in fastboot mode... FOUND");
             d
         }
         None => {
             emit(app, "Waiting for device in fastboot mode... NOT FOUND");
-            return Err("Fastboot device not detected.".into());
+            let (ok, msg) = check_fastboot_driver();
+            if !ok {
+                emit(app, &msg);
+                return Err(format!("Fastboot device not detected. {msg}"));
+            }
+            return Err("Fastboot device not detected after reboot.".into());
         }
     };
 
@@ -984,18 +1010,65 @@ pub fn anykernel(app: AppHandle, opts: AnyKernelOptions) -> Result<bool, String>
         adb(&["push", local_bin.to_string_lossy().as_ref(), REMOTE_BIN], 60000);
         adb(&["shell", "chmod", "755", REMOTE_BIN], 10000);
 
+        // Pick a shell interpreter: KernelSU-Next busybox → zip's own busybox → system sh.
+        // The update-binary shebang (#!/sbin/sh) does not exist on modern Android.
+        let shell_bin = {
+            let ksu_check = adb(&["shell", "su", "-c", "[ -f /data/adb/ksu/bin/busybox ] && echo yes"], 10000);
+            if ksu_check.contains("yes") {
+                "/data/adb/ksu/bin/busybox ash".to_string()
+            } else {
+                let local_bb = downloads_dir().join("busybox");
+                let mut has_zip_bb = false;
+                if let Ok(file) = std::fs::File::open(zip_path) {
+                    if let Ok(mut archive) = zip::ZipArchive::new(file) {
+                        for i in 0..archive.len() {
+                            if let Ok(mut f) = archive.by_index(i) {
+                                if f.name().to_lowercase().ends_with("tools/busybox") || f.name().to_lowercase().ends_with("busybox") {
+                                    if let Ok(mut out) = std::fs::File::create(&local_bb) {
+                                        let _ = std::io::copy(&mut f, &mut out);
+                                        has_zip_bb = true;
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if has_zip_bb {
+                    adb(&["push", local_bb.to_string_lossy().as_ref(), &format!("{DIR}/busybox")], 60000);
+                    adb(&["shell", "chmod", "755", &format!("{DIR}/busybox")], 10000);
+                    format!("{DIR}/busybox ash")
+                } else {
+                    "sh".to_string()
+                }
+            }
+        };
+
         emit(&app, "Flashing via AnyKernel update-binary (root). Do not unplug!");
-        let cmd = format!("cd {} && {} {} 3 1 {}", DIR, REMOTE_BIN, DIR, REMOTE_ZIP);
+        // Correct AnyKernel3 invocation: {shell} {update-binary} 3 1 {zip}
+        // with AKHOME pointing to a writable temp dir for repack work.
+        let cmd = format!("cd {} && AKHOME={DIR}/tmp {} {} 3 1 {}", DIR, shell_bin, REMOTE_BIN, REMOTE_ZIP);
         let result = adb(&["shell", "su", "-c", &cmd], 300000);
         if result.contains("records out") || result.contains("okay") || result.contains("success") {
             emit(&app, "Boot partition flashed... DONE");
         }
+
+        emit(&app, "Cleaning up...");
+        let _ = adb(&["shell", "rm", "-rf", DIR], 10000);
+        let _ = std::fs::remove_file(&local_bin);
+        let _ = std::fs::remove_file(downloads_dir().join("busybox"));
+        emit(&app, "Cleaning up... DONE");
+
         emit(&app, "Flash complete, rebooting device...");
         adb(&["reboot"], 10000);
-        let elapsed = started.elapsed().as_secs();
-        emit(&app, format!("Elapsed Time: {}s", elapsed).as_str());
-        return Ok(true);
-    }
+emit(&app, "Cleaning up...");
+    let _ = std::fs::remove_file(downloads_dir().join(format!("{}_anykernel.img", chosen)));
+    emit(&app, "Cleaning up... DONE");
+
+    let elapsed = started.elapsed().as_secs();
+    emit(&app, format!("Elapsed Time: {}s", elapsed).as_str());
+    Ok(true)
+}
 
     emit(&app, if root { "No update-binary; falling back to fastboot." } else { "No root detected; falling back to fastboot." });
 
@@ -1413,6 +1486,7 @@ pub fn term_run(app: AppHandle, command: &str) -> Result<bool, String> {
     if parts.is_empty() {
         return Ok(true);
     }
+    crate::log::write(&format!("terminal command: {}", command));
     let program = resolve_program(&parts[0]);
     let args: Vec<&str> = parts[1..].iter().map(|s| s.as_str()).collect();
 

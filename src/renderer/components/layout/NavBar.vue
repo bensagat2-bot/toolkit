@@ -184,6 +184,9 @@ const menus: Array<{
 .menu {
   flex: auto;
   -webkit-app-region: no-drag;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
 }
 
 ul {

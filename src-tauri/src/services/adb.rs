@@ -31,8 +31,13 @@ pub async fn run_adb(args: &[&str]) -> String {
     }
     let mut cmd = base_command(&path);
     cmd.args(args);
+    crate::log::write(&format!("adb {:?}", args));
     let output = super::utils::run_output(&mut cmd, 8000);
-    String::from_utf8_lossy(&output.stdout).to_string()
+    let result = String::from_utf8_lossy(&output.stdout).to_string();
+    if !result.is_empty() {
+        crate::log::write(&format!("adb result: {} bytes", result.len()));
+    }
+    result
 }
 
 pub async fn detect() -> (String, Option<String>) {
@@ -62,6 +67,11 @@ pub async fn run_fastboot(args: &[&str]) -> String {
     }
     let mut cmd = base_command(&path);
     cmd.args(args);
+    crate::log::write(&format!("fastboot {:?}", args));
     let output = super::utils::run_output(&mut cmd, 8000);
-    String::from_utf8_lossy(&output.stdout).to_string()
+    let result = String::from_utf8_lossy(&output.stdout).to_string();
+    if !result.is_empty() {
+        crate::log::write(&format!("fastboot result: {} bytes", result.len()));
+    }
+    result
 }

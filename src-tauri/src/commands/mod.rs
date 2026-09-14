@@ -52,6 +52,26 @@ pub async fn ota_extract_tgz(
     .map_err(|e| format!("OTA task failed: {e}"))?
 }
 
+#[command]
+pub async fn ota_list_fastboot_images(url: String) -> Result<Vec<crate::services::ota::FastbootImageInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::ota::list_fastboot_images(&url))
+        .await
+        .map_err(|e| format!("Fastboot zip task failed: {e}"))?
+}
+
+#[command]
+pub async fn ota_extract_fastboot_image(
+    url: String,
+    image_name: String,
+    output_path: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::ota::extract_fastboot_image(&url, &image_name, &output_path)
+    })
+    .await
+    .map_err(|e| format!("Fastboot zip task failed: {e}"))?
+}
+
 // ── Device Commands ──────────────────────────────────────────
 
 #[command]
@@ -411,6 +431,11 @@ pub async fn term_run(app: tauri::AppHandle, command: String) -> Result<bool, St
     tauri::async_runtime::spawn_blocking(move || crate::services::utils::term_run(app, &command))
         .await
         .map_err(|e| format!("Terminal task failed: {e}"))?
+}
+
+#[command]
+pub async fn check_fastboot_driver() -> Result<(bool, String), String> {
+    Ok(crate::services::utils::check_fastboot_driver())
 }
 
 #[command]

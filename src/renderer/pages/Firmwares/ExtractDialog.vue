@@ -2,22 +2,28 @@
   <div class="extract-overlay" @click.self="close">
     <div class="extract-modal">
       <div class="modal-header">
-        <h3>Extract Partition</h3>
+        <h3>Extract Partitions</h3>
         <button class="modal-close" @click="close">&times;</button>
       </div>
 
       <div class="modal-body">
-        <!-- is fastboot -->
         <div class="fastboot-form" v-if="isTgz">
-          <p class="hint">Fastboot archive - the whole file streams, only the requested image is saved.</p>
+          <p class="hint">Fastboot .tgz archive - the whole file streams, only the requested image is saved.</p>
           <div class="field">
             <label>Image name</label>
             <input v-model="imageName" class="text-input" placeholder="init_boot" />
           </div>
         </div>
 
-        <!-- is OTA: partition list -->
-        <template v-else>
+        <template v-if="showPartList">
+          <div class="part-header" v-if="loaded">
+            <span class="selection-count">{{ selected.length }} / {{ partitions.length }} selected</span>
+            <div class="part-actions">
+              <button class="btn-link" :disabled="!partitions.length" @click="selectAll">Select All</button>
+              <button class="btn-link" :disabled="!partitions.length" @click="deselectAll">Deselect All</button>
+            </div>
+          </div>
+
           <div class="part-loading" v-if="!loaded && !error">
             <div class="spinner"></div>
             <p>Reading partition manifest...</p>
@@ -31,9 +37,12 @@
             <div
               v-for="p in partitions"
               :key="p.name"
-              :class="['part-row', { selected: selected === p.name }]"
-              @click="selected = p.name"
+              :class="['part-row', { selected: isSelected(p) }]"
+              @click="toggle(p)"
             >
+              <span class="col-check" @click.stop>
+                <input type="checkbox" :checked="isSelected(p)" @change="toggle(p)" />
+              </span>
               <span class="part-name">{{ p.name }}</span>
               <span class="part-size">{{ formatMb(p.size_bytes) }}</span>
             </div>
@@ -51,6 +60,9 @@
         <div class="extract-progress" v-if="extracting">
           <div class="processing-ring"></div>
           <p>{{ progressText }}</p>
+          <div class="progress-bar-wrap" v-if="showPartList && selected.length > 1">
+            <div class="progress-bar" :style="{ width: extractProgress + '%' }"></div>
+          </div>
         </div>
 
         <div class="done-msg" v-if="done">
@@ -61,7 +73,7 @@
 
         <div class="extract-actions">
           <button class="btn btn-primary" @click="start" :disabled="!canStart || extracting">
-            {{ isTgz ? 'Extract .img' : 'Extract Selected' }}
+            {{ isTgz ? 'Extract .img' : `Extract (${selected.length})` }}
           </button>
           <button class="btn" @click="close" :disabled="extracting">Close</button>
         </div>
@@ -84,22 +96,49 @@ const emit = defineEmits(['close'])
 const partitions = ref([])
 const loaded = ref(false)
 const error = ref('')
-const selected = ref('')
+const selectedNames = ref([])
 const imageName = ref('init_boot')
 const outputDir = ref('')
 const extracting = ref(false)
 const progressText = ref('')
+const extractProgress = ref(0)
 const done = ref('')
 const extractError = ref('')
 
 const isFrbox = computed(() => props.url.includes('/disk/s/'))
-const isTgz = computed(() => !isFrbox.value && (props.url.includes('images_') || props.url.endsWith('.tgz')))
+const isTgz = computed(() => !isFrbox.value && props.url.endsWith('.tgz'))
+const isFastbootZip = computed(() => !isFrbox.value && !isTgz.value && (props.url.includes('images_') || props.url.endsWith('.zip')))
+const showPartList = computed(() => !isTgz.value)
 
 const canStart = computed(() => {
   if (!outputDir.value) return false
   if (isTgz.value) return !!imageName.value.trim()
-  return !!selected.value
+  return selectedNames.value.length > 0
 })
+
+const allChecked = computed(() => partitions.value.length > 0 && selectedNames.value.length === partitions.value.length)
+
+function isSelected(p) {
+  return selectedNames.value.includes(p.name)
+}
+
+function toggle(p) {
+  const idx = selectedNames.value.indexOf(p.name)
+  if (idx >= 0) selectedNames.value.splice(idx, 1)
+  else selectedNames.value.push(p.name)
+}
+
+function toggleAll() {
+  selectedNames.value = allChecked.value ? [] : partitions.value.map((p) => p.name)
+}
+
+function selectAll() {
+  selectedNames.value = partitions.value.map((p) => p.name)
+}
+
+function deselectAll() {
+  selectedNames.value = []
+}
 
 function formatMb(bytes) {
   const mb = (bytes || 0) / 1024 / 1024
@@ -115,38 +154,62 @@ async function start() {
   done.value = ''
   extractError.value = ''
   extracting.value = true
-  progressText.value = isTgz.value
-    ? `Streaming ${imageName.value}.img...`
-    : `Extracting ${selected.value}.img...`
-  try {
-    let result
-    if (isFrbox.value) {
-      const path = `${outputDir.value}\\${selected.value}`
-      result = await sendIpcToMain('frbox_extract_partition', {
-        url: props.url,
-        pwd: props.pwd || null,
-        name: selected.value,
-        outputPath: path,
-      })
-    } else if (isTgz.value) {
-      const path = `${outputDir.value}\\${imageName.value.replace(/\.img$/, '')}.img`
-      result = await sendIpcToMain('ota_extract_tgz', {
-        url: props.url,
-        imageName: imageName.value,
-        outputPath: path,
-      })
-    } else {
-      const path = `${outputDir.value}\\${selected.value}.img`
-      result = await sendIpcToMain('ota_extract_partition', {
-        url: props.url,
-        partition: selected.value,
-        outputPath: path,
-      })
+  extractProgress.value = 0
+
+  const names = isTgz.value ? [imageName.value] : selectedNames.value
+  let total = names.length
+  let completed = 0
+
+  for (const name of names) {
+    const isLast = names.length > 1
+    progressText.value = isLast
+      ? `Extracting ${name}.img... (${completed + 1}/${total})`
+      : `Extracting ${name}.img...`
+    extractProgress.value = total > 1 ? Math.round((completed / total) * 100) : 0
+    try {
+      let result
+      const stem = name.replace(/\.img$/i, '')
+      if (isFrbox.value) {
+        const path = `${outputDir.value}\\${stem}`
+        result = await sendIpcToMain('frbox_extract_partition', {
+          url: props.url,
+          pwd: props.pwd || null,
+          name: name,
+          outputPath: path,
+        })
+      } else if (isTgz.value) {
+        const path = `${outputDir.value}\\${stem}.img`
+        result = await sendIpcToMain('ota_extract_tgz', {
+          url: props.url,
+          imageName: name,
+          outputPath: path,
+        })
+      } else if (isFastbootZip.value) {
+        const path = `${outputDir.value}\\${stem}.img`
+        result = await sendIpcToMain('ota_extract_fastboot_image', {
+          url: props.url,
+          imageName: name,
+          outputPath: path,
+        })
+      } else {
+        const path = `${outputDir.value}\\${stem}.img`
+        result = await sendIpcToMain('ota_extract_partition', {
+          url: props.url,
+          partition: name,
+          outputPath: path,
+        })
+      }
+      completed++
+      if (isLast || completed === total) {
+        done.value = total > 1 ? `${completed}/${total} partitions extracted` : (result || 'Extracted')
+      }
+    } catch (e) {
+      extractError.value = `${name}: ${e || 'Extraction failed'}`
+      extracting.value = false
+      return
     }
-    done.value = result || 'Extracted'
-  } catch (e) {
-    extractError.value = e || 'Extraction failed'
   }
+  extractProgress.value = 100
   extracting.value = false
 }
 
@@ -161,17 +224,22 @@ onMounted(async () => {
     return
   }
   try {
+    let list
     if (isFrbox.value) {
       const entries = await sendIpcToMain('frbox_list_partitions', {
         url: props.url,
         pwd: props.pwd || null,
       })
-      partitions.value = (entries || [])
+      list = (entries || [])
         .filter((e) => e.uncompressed_size > 0)
         .map((e) => ({ name: e.name, size_bytes: e.uncompressed_size }))
+    } else if (isFastbootZip.value) {
+      list = await sendIpcToMain('ota_list_fastboot_images', { url: props.url })
     } else {
-      partitions.value = await sendIpcToMain('ota_list_partitions', { url: props.url })
+      list = await sendIpcToMain('ota_list_partitions', { url: props.url })
     }
+    partitions.value = list
+    selectedNames.value = list.map((p) => p.name)
     loaded.value = true
   } catch (e) {
     error.value = e || 'Failed to read partitions'
@@ -181,7 +249,7 @@ onMounted(async () => {
 
 <style scoped>
 .extract-overlay { position: fixed; inset: 0; z-index: 1100; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; }
-.extract-modal { width: 480px; max-height: 80vh; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+.extract-modal { width: 520px; max-height: 85vh; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
 .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border-primary); }
 .modal-header h3 { margin: 0; font-size: 14px; }
 .modal-close { background: none; border: none; color: var(--text-secondary); font-size: 20px; cursor: pointer; padding: 0 4px; }
@@ -194,19 +262,29 @@ onMounted(async () => {
 .text-input:focus { border-color: var(--accent-primary); }
 .row { display: flex; gap: 6px; .text-input { flex: 1; } }
 
-.part-list { max-height: 240px; overflow-y: auto; border: 1px solid var(--border-primary); border-radius: 6px; }
-.part-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; font-size: 12px; cursor: pointer; border-bottom: 1px solid var(--border-primary); transition: background 0.15s; }
+.part-header { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
+.selection-count { font-size: 11px; color: var(--accent-primary); font-weight: 600; }
+.part-actions { display: flex; gap: 10px; }
+.btn-link { background: none; border: none; color: var(--accent-primary); font-size: 11px; cursor: pointer; padding: 0; }
+.btn-link:hover:not(:disabled) { text-decoration: underline; }
+.btn-link:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.part-list { max-height: 280px; overflow-y: auto; border: 1px solid var(--border-primary); border-radius: 6px; }
+.part-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 12px; cursor: pointer; border-bottom: 1px solid var(--border-primary); transition: background 0.15s; }
 .part-row:last-child { border-bottom: none; }
 .part-row:hover { background: var(--bg-tertiary); }
-.part-row.selected { background: rgba(77,131,175,0.15); }
-.part-name { font-weight: 500; font-family: monospace; }
-.part-size { color: var(--text-secondary); font-size: 11px; }
+.part-row.selected { background: color-mix(in srgb, var(--accent-primary) 8%, transparent); }
+.col-check { flex: none; width: 20px; display: flex; align-items: center; input { accent-color: var(--accent-primary); cursor: pointer; } }
+.part-name { flex: 1; font-weight: 500; font-family: monospace; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.part-size { flex: none; color: var(--text-secondary); font-size: 11px; white-space: nowrap; }
 
 .part-loading { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px; p { font-size: 12px; color: var(--text-secondary); margin: 0; } }
 .spinner { width: 22px; height: 22px; border: 2px solid var(--border-primary); border-top-color: var(--accent-primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
 .part-error p { font-size: 12px; color: #f44336; }
 
-.extract-progress { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--border-primary); border-radius: 6px; background: var(--bg-tertiary); p { font-size: 12px; margin: 0; } }
+.extract-progress { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px; border: 1px solid var(--border-primary); border-radius: 6px; background: var(--bg-tertiary); p { font-size: 12px; margin: 0; } }
+.progress-bar-wrap { width: 100%; height: 4px; background: var(--border-primary); border-radius: 2px; overflow: hidden; }
+.progress-bar { height: 100%; background: var(--accent-primary); border-radius: 2px; transition: width 0.3s ease; }
 .processing-ring { width: 20px; height: 20px; border: 2px solid var(--border-primary); border-top-color: var(--accent-primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
 .done-msg { font-size: 12px; }
 .status-ok { color: #4caf50; }

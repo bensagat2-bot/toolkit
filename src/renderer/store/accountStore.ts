@@ -85,11 +85,16 @@ export const useAccountStore = defineStore('account', () => {
   // requiring a re-login. Never force-logs-out, it only shows the banned screen.
   async function checkStatus() {
     if (!account.value?.hwid) return
+    let nonce = 0
     try {
       if (account.value.token) {
-        const res = await fetch(`${API_BASE}/api/auth/me?token=${encodeURIComponent(account.value.token)}`)
+        const res = await fetch(`${API_BASE}/api/auth/me?token=${encodeURIComponent(account.value.token)}&_=${++nonce}`)
         if (res.status === 401) {
-          banned.value = 'Your session has been revoked. Please sign in again.'
+          const body = await res.text().catch(() => '')
+          // Only revoke if server explicitly says session is invalid (not just transient 401)
+          if (body.toLowerCase().includes('invalid') || body.toLowerCase().includes('expired') || body.toLowerCase().includes('revoked')) {
+            banned.value = 'Your session has been revoked. Please sign in again.'
+          }
           return
         }
         const me = await res.json()
@@ -102,7 +107,8 @@ export const useAccountStore = defineStore('account', () => {
         }
         return
       }
-      const res = await fetch(`${API_BASE}/api/auth/status?hwid=${encodeURIComponent(account.value.hwid)}`)
+      const res = await fetch(`${API_BASE}/api/auth/status?hwid=${encodeURIComponent(account.value.hwid)}&_=${++nonce}`)
+      if (!res.ok) return
       const data = await res.json()
       if (data?.status === 'banned') banned.value = 'Your account has been banned.'
       else if (data?.status === 'suspended') banned.value = 'Your account has been suspended.'
