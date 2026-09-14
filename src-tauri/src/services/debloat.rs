@@ -6,6 +6,7 @@ use serde::Serialize;
 use super::utils::{run_cmd, adb_path};
 
 use std::collections::{HashMap, HashSet};
+use std::io::Read;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AppInfo {
@@ -168,42 +169,197 @@ pub fn list_packages() -> Result<Vec<AppInfo>, String> {
 pub fn uninstall_package(package_name: String) -> Result<String, String> {
     let serial = detect_serial().ok_or("No ADB device detected")?;
 
-    let result = adb_serial(&serial, &["shell", "pm", "uninstall", "--user", "0", &package_name], 15000);
-    if !result.contains("Failure") && !result.contains("Failed") && !result.contains("Error") {
+    // 1) Standard adb uninstall (user apps)
+    let r1 = adb_serial(&serial, &["uninstall", &package_name], 15000);
+    if !r1.contains("Failure") && !r1.contains("Failed") {
         return Ok(format!("Uninstalled: {package_name}"));
     }
-    let last_error = result.trim().to_string();
 
-    let result2 = adb_serial(&serial, &["shell", "cmd", "package", "uninstall", "--user", "0", &package_name], 15000);
-    if !result2.contains("Failure") && !result2.contains("Failed") && !result2.contains("Error") {
+    // 2) pm uninstall --user 0 (remove for current user, works on some system apps)
+    let r2 = adb_serial(&serial, &["shell", "pm", "uninstall", "--user", "0", &package_name], 15000);
+    if !r2.contains("Failure") && !r2.contains("Failed") {
         return Ok(format!("Uninstalled: {package_name}"));
     }
-    let last_error2 = result2.trim().to_string();
 
-    let result3 = adb_serial(&serial, &["shell", "pm", "disable-user", "--user", "0", &package_name], 10000);
-    if result3.contains("disabled") || result3.contains("new state") {
+    // 3) cmd package uninstall (alternate API)
+    let r3 = adb_serial(&serial, &["shell", "cmd", "package", "uninstall", "--user", "0", &package_name], 15000);
+    if !r3.contains("Failure") && !r3.contains("Failed") {
+        return Ok(format!("Uninstalled: {package_name}"));
+    }
+
+    // 4) disable-user (fallback for system apps that refuse uninstall)
+    let r4 = adb_serial(&serial, &["shell", "pm", "disable-user", "--user", "0", &package_name], 10000);
+    if r4.contains("disabled") || r4.contains("new state") {
         return Ok(format!("Disabled: {package_name}"));
     }
 
-    let result4 = adb_serial(&serial, &["shell", "su", "-c", &format!("pm uninstall --user 0 {}", package_name)], 15000);
-    if !result4.contains("Failure") && !result4.contains("Failed") && !result4.contains("Error") {
+    // 5) Root attempts
+    let r5 = adb_serial(&serial, &["shell", "su", "-c", &format!("pm uninstall --user 0 {}", package_name)], 15000);
+    if !r5.contains("Failure") && !r5.contains("Failed") && !r5.contains("Error") {
         return Ok(format!("Uninstalled (root): {package_name}"));
     }
 
-    let result5 = adb_serial(&serial, &["shell", "su", "-c", &format!("cmd package uninstall --user 0 {}", package_name)], 15000);
-    if !result5.contains("Failure") && !result5.contains("Failed") && !result5.contains("Error") {
+    let r6 = adb_serial(&serial, &["shell", "su", "-c", &format!("cmd package uninstall --user 0 {}", package_name)], 15000);
+    if !r6.contains("Failure") && !r6.contains("Failed") && !r6.contains("Error") {
         return Ok(format!("Uninstalled (root): {package_name}"));
     }
 
-    let result6 = adb_serial(&serial, &["shell", "pm", "uninstall", "-k", "--user", "0", &package_name], 15000);
-    if !result6.contains("Failure") && !result6.contains("Failed") && !result6.contains("Error") {
-        return Ok(format!("Uninstalled (keep data): {package_name}"));
-    }
-
-    let all_errors = format!("pm: {last_error} | cmd: {last_error2}");
-    Err(format!("Failed to remove {package_name}: {all_errors}"))
+    Err(format!("Failed to remove {package_name}"))
 }
 
+/// Preferred icon entry paths inside an APK (highest density first).
+const ICON_PATHS: &[&str] = &[
+    "res/mipmap-xxxhdpi-v4/ic_launcher_foreground.png",
+    "res/mipmap-xxxhdpi-v4/ic_launcher.png",
+    "res/mipmap-xxhdpi-v4/ic_launcher_foreground.png",
+    "res/mipmap-xxhdpi-v4/ic_launcher.png",
+    "res/mipmap-xxxhdpi/ic_launcher_foreground.png",
+    "res/mipmap-xxxhdpi/ic_launcher.png",
+    "res/mipmap-xxhdpi/ic_launcher_foreground.png",
+    "res/mipmap-xxhdpi/ic_launcher.png",
+    "res/mipmap-xhdpi-v4/ic_launcher_foreground.png",
+    "res/mipmap-xhdpi-v4/ic_launcher.png",
+    "res/mipmap-xhdpi/ic_launcher.png",
+    "res/mipmap-hdpi-v4/ic_launcher.png",
+    "res/mipmap-hdpi/ic_launcher.png",
+    "res/mipmap-mdpi/ic_launcher.png",
+    "res/mipmap-xxxhdpi-v4/ic_launcher_round.png",
+    "res/mipmap-xxhdpi-v4/ic_launcher_round.png",
+    "res/mipmap-xxxhdpi-v4/ic_launcher_round_foreground.png",
+    "res/drawable-xxxhdpi-v4/ic_launcher.png",
+    "res/drawable-xxhdpi-v4/ic_launcher.png",
+    "res/drawable-xxhdpi/ic_launcher.png",
+    "res/drawable-xhdpi/ic_launcher.png",
+    "res/drawable/ic_launcher.png",
+    "res/drawable/icon.png",
+    "res/drawable/app_icon.png",
+    "res/mipmap-xxxhdpi-v4/ic_launcher_foreground.webp",
+    "res/mipmap-xxxhdpi-v4/ic_launcher.webp",
+    "res/mipmap-xxhdpi-v4/ic_launcher_foreground.webp",
+    "res/mipmap-xxhdpi-v4/ic_launcher.webp",
+    "res/mipmap-xxxhdpi/ic_launcher.webp",
+    "res/mipmap-xxhdpi/ic_launcher.webp",
+    "res/mipmap-xhdpi-v4/ic_launcher.webp",
+    "res/drawable-xxxhdpi-v4/ic_launcher.webp",
+    "res/drawable/ic_launcher.webp",
+];
+
+/// Extract launcher icon for one package by pulling the APK and reading it as ZIP.
+/// Returns "data:image/png;base64,..." or "data:image/webp;base64,..." or empty on failure.
+pub fn get_icon(package_name: &str) -> Result<String, String> {
+    let serial = detect_serial().ok_or("No ADB device detected")?;
+
+    // 1) Get APK path on device
+    let out = adb_serial(&serial, &["shell", "pm", "path", package_name], 8000);
+    let mut apk_path = String::new();
+    for line in out.lines() {
+        let s = line.trim();
+        let path = if let Some(rest) = s.strip_prefix("package:") { rest } else { s };
+        if path.ends_with(".apk") && (path.contains("base.apk") || apk_path.is_empty()) {
+            apk_path = path.to_string();
+            if path.contains("base.apk") { break; }
+        }
+    }
+    if apk_path.is_empty() {
+        return Err("APK path not found".to_string());
+    }
+
+    // 2) Pull APK to temp file
+    let tmp_dir = std::env::temp_dir();
+    let tmp_apk = tmp_dir.join(format!("v1per_icon_{}.apk", package_name.replace('.', "_")));
+    let tmp_str = tmp_apk.to_string_lossy().to_string();
+    let pull = adb_serial(&serial, &["pull", &apk_path, &tmp_str], 120000);
+    if !pull.contains("file") && !pull.contains("bytes") && !pull.trim().is_empty() && !pull.contains("pulled") {
+        let _ = std::fs::remove_file(&tmp_apk);
+        return Err(format!("adb pull failed: {pull}"));
+    }
+    if !tmp_apk.exists() || tmp_apk.metadata().map(|m| m.len()).unwrap_or(0) < 100 {
+        let _ = std::fs::remove_file(&tmp_apk);
+        return Err("APK too small or missing after pull".to_string());
+    }
+
+    // 3) Open as ZIP and search for icon
+    let result = extract_icon_from_apk(&tmp_apk);
+
+    // 4) Cleanup temp file
+    let _ = std::fs::remove_file(&tmp_apk);
+
+    result
+}
+
+fn extract_icon_from_apk(apk_path: &std::path::Path) -> Result<String, String> {
+    let file = std::fs::File::open(apk_path).map_err(|e| e.to_string())?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid APK/ZIP: {e}"))?;
+
+    // 1) Try preferred paths first
+    for path in ICON_PATHS {
+        if let Ok(mut entry) = archive.by_name(path) {
+            let size = entry.size();
+            if size >= 100 && size <= 900_000 {
+                let mut data = Vec::new();
+                if entry.read_to_end(&mut data).is_ok() && data.len() >= 50 {
+                    let mime = if path.ends_with(".webp") { "image/webp" } else { "image/png" };
+                    let b64 = base64::Engine::encode(&data, &base64::engine::general_purpose::STANDARD);
+                    return Ok(format!("data:{};base64,{}", mime, b64));
+                }
+            }
+        }
+    }
+
+    // 2) Fallback: scan all entries for best icon match
+    let mut candidates: Vec<(String, Vec<u8>, u32)> = Vec::new();
+    for i in 0..archive.len() {
+        let mut entry = match archive.by_index(i) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let name = entry.name().to_lowercase();
+        if !name.starts_with("res/") { continue; }
+        if !name.ends_with(".png") && !name.ends_with(".webp") { continue; }
+        let size = entry.size();
+        if size < 300 || size > 900_000 { continue; }
+        if name.contains("background") { continue; }
+
+        let score = score_icon_path(&name, size);
+        if score == 0 { continue; }
+
+        let mut data = Vec::new();
+        if entry.read_to_end(&mut data).is_err() { continue; }
+        candidates.push((entry.name().to_string(), data, score));
+    }
+
+    candidates.sort_by(|a, b| b.2.cmp(&a.2));
+    if let Some((path, data, _)) = candidates.into_iter().next() {
+        let mime = if path.ends_with(".webp") { "image/webp" } else { "image/png" };
+        let b64 = base64::Engine::encode(&data, &base64::engine::general_purpose::STANDARD);
+        Ok(format!("data:{};base64,{}", mime, b64))
+    } else {
+        Err("No icon found in APK".to_string())
+    }
+}
+
+fn score_icon_path(path: &str, size: u64) -> u32 {
+    let mut score = 0u32;
+    if path.contains("ic_launcher_foreground") { score += 100; }
+    else if path.contains("ic_launcher_round") { score += 80; }
+    else if path.contains("ic_launcher") { score += 90; }
+    else if path.contains("app_icon") || path.contains("/icon.") { score += 60; }
+    else if path.contains("logo") { score += 40; }
+    else if path.contains("mipmap") { score += 20; }
+    else { return 0; }
+
+    if path.contains("xxxhdpi") { score += 40; }
+    else if path.contains("xxhdpi") { score += 30; }
+    else if path.contains("xhdpi") { score += 20; }
+    else if path.contains("hdpi") { score += 10; }
+
+    if size >= 1_000 && size <= 80_000 { score += 15; }
+    else if size >= 80_000 && size <= 200_000 { score += 5; }
+
+    score
+}
+
+/// Batch icon load using resolve-app-info (fast, Android 12+).
 pub fn get_icons(package_names: Vec<String>) -> HashMap<String, String> {
     let serial = match detect_serial() {
         Some(s) => s,

@@ -511,6 +511,13 @@ pub async fn debloat_get_icons(package_names: Vec<String>) -> std::collections::
     crate::services::debloat::get_icons(package_names)
 }
 
+#[command]
+pub async fn debloat_get_icon(package_name: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::debloat::get_icon(&package_name))
+        .await
+        .map_err(|e| format!("Debloat icon task failed: {e}"))?
+}
+
 // ── Xiaomi Commands ──────────────────────────────────────────
 
 #[command]

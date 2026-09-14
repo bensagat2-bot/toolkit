@@ -96,6 +96,7 @@ import { sendIpcToMain } from '@renderer/utils/ipc'
 const apps = ref([])
 const icons = ref({})
 const selected = ref([])
+const iconLoading = ref(false)
 const search = ref('')
 const filter = ref('all')
 const loading = ref(false)
@@ -143,21 +144,29 @@ async function loadApps() {
     const result = await sendIpcToMain('debloat_list_packages')
     apps.value = result
     selected.value = []
+    icons.value = {}
     showToast(`Loaded ${result.length} apps`, 'success')
-    fetchIcons(result.map((a) => a.package_name))
+    loadIconsLazy(result.map((a) => a.package_name))
   } catch (e) {
     showToast(e?.message || 'Failed to load apps', 'error')
   }
   loading.value = false
 }
 
-async function fetchIcons(packages) {
-  try {
-    const batch = await sendIpcToMain('debloat_get_icons', { packageNames: packages })
-    if (batch) icons.value = batch
-  } catch {
-    // Icons are optional, fallback to letter+color
+async function loadIconsLazy(packages) {
+  iconLoading.value = true
+  for (const pkg of packages) {
+    if (icons.value[pkg]) continue
+    try {
+      const dataUri = await sendIpcToMain('debloat_get_icon', { packageName: pkg })
+      if (dataUri && dataUri.startsWith('data:')) {
+        icons.value[pkg] = dataUri
+      }
+    } catch {
+      // per-package icon is optional
+    }
   }
+  iconLoading.value = false
 }
 
 async function uninstallSelected() {
