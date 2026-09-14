@@ -210,6 +210,7 @@ function frboxUrl(link, pwd) {
 function openExtract() {
   extractClicked.value = true
   setTimeout(() => { extractClicked.value = false }, 300)
+  selectedItem.value = null
   showExtract.value = true
 }
 

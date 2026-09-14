@@ -1,4 +1,5 @@
 <template>
+  <Teleport to="body">
   <div class="extract-overlay" @click.self="close">
     <div class="extract-modal">
       <div class="modal-header">
@@ -29,9 +30,7 @@
             <p>Reading partition manifest...</p>
           </div>
 
-          <div class="part-error" v-if="error">
-            <p>{{ error }}</p>
-          </div>
+          <div class="part-error" v-if="error">{{ error }}</div>
 
           <div class="part-list scroll" v-if="loaded">
             <div
@@ -80,6 +79,7 @@
       </div>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <script setup>
