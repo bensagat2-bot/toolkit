@@ -106,9 +106,7 @@ const done = ref('')
 const extractError = ref('')
 
 const isFrbox = computed(() => props.url.includes('/disk/s/'))
-const isTgz = computed(() => !isFrbox.value && props.url.endsWith('.tgz'))
-const isZip = computed(() => !isFrbox.value && !isTgz.value && (props.url.endsWith('.zip') || props.url.includes('.zip?')))
-const isFastbootZip = computed(() => isZip.value && (props.url.includes('images_') || props.url.includes('fastboot') || props.url.includes('miui') || props.url.includes('firmware')))
+const isTgz = computed(() => !isFrbox.value && (props.url.includes('images_') || props.url.endsWith('.tgz')))
 const showPartList = computed(() => !isTgz.value)
 
 const canStart = computed(() => {
@@ -185,21 +183,6 @@ async function start() {
           imageName: name,
           outputPath: path,
         })
-      } else if (isZip.value) {
-        const path = `${outputDir.value}\\${stem}.img`
-        try {
-          result = await sendIpcToMain('ota_extract_fastboot_image', {
-            url: props.url,
-            imageName: name,
-            outputPath: path,
-          })
-        } catch {
-          result = await sendIpcToMain('ota_extract_partition', {
-            url: props.url,
-            partition: name,
-            outputPath: path,
-          })
-        }
       } else {
         const path = `${outputDir.value}\\${stem}.img`
         result = await sendIpcToMain('ota_extract_partition', {
@@ -242,30 +225,8 @@ try {
         list = (entries || [])
           .filter((e) => e.uncompressed_size > 0)
           .map((e) => ({ name: e.name, size_bytes: e.uncompressed_size }))
-      } else if (isZip.value) {
-        try {
-          list = await sendIpcToMain('ota_list_fastboot_images', { url: props.url })
-          if (!list || !list.length) throw new Error('empty')
-        } catch {
-          try {
-            list = await sendIpcToMain('ota_list_partitions', { url: props.url })
-          } catch {
-            list = []
-            error.value = 'Unsupported firmware format. Only OTA payload.bin and fastboot zips are supported.'
-          }
-        }
       } else {
-        try {
-          list = await sendIpcToMain('ota_list_fastboot_images', { url: props.url })
-          if (!list || !list.length) throw new Error('empty')
-        } catch {
-          try {
-            list = await sendIpcToMain('ota_list_partitions', { url: props.url })
-          } catch {
-            list = []
-            error.value = 'Unsupported firmware format. Only OTA payload.bin and fastboot zips are supported.'
-          }
-        }
+        list = await sendIpcToMain('ota_list_partitions', { url: props.url })
       }
     partitions.value = list
     selectedNames.value = list.map((p) => p.name)
