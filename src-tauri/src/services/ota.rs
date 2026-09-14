@@ -32,6 +32,8 @@ fn client() -> Client {
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(60))
+        .pool_max_idle_per_host(WORKERS + 4)
+        .tcp_keepalive(std::time::Duration::from_secs(60))
         .build()
         .unwrap_or_default()
 }
@@ -253,14 +255,21 @@ pub struct PartitionInfo {
     pub size_bytes: u64,
 }
 
+#[derive(Clone, Debug)]
+struct Extent {
+    start_block: u64,
+    num_blocks: u64,
+}
+
+#[derive(Clone, Debug)]
 struct Operation {
     op_type: u32,
     data_offset: u64,
     data_length: u64,
-    dst_blocks: u64,
-    dst_extent_start: u64,
+    dst_extents: Vec<Extent>,
 }
 
+#[derive(Clone, Debug)]
 struct Partition {
     name: String,
     operations: Vec<Operation>,
@@ -343,8 +352,7 @@ fn parse_operation(data: &[u8]) -> Result<Operation, String> {
     let mut op_type = 0u32;
     let mut data_offset = 0u64;
     let mut data_length = 0u64;
-    let mut dst_blocks = 0u64;
-    let mut dst_extent_start = 0u64;
+    let mut dst_extents = Vec::new();
     loop {
         if r.pos >= data.len() {
             break;
@@ -358,10 +366,10 @@ fn parse_operation(data: &[u8]) -> Result<Operation, String> {
                 let len = r.varint()? as usize;
                 let data = r.bytes(len)?;
                 let (start, blocks) = parse_extent(data)?;
-                if dst_blocks == 0 {
-                    dst_extent_start = start;
-                }
-                dst_blocks += blocks;
+                dst_extents.push(Extent {
+                    start_block: start,
+                    num_blocks: blocks,
+                });
             }
             (_, 0) => {
                 r.varint()?;
@@ -383,8 +391,7 @@ fn parse_operation(data: &[u8]) -> Result<Operation, String> {
         op_type,
         data_offset,
         data_length,
-        dst_blocks,
-        dst_extent_start,
+        dst_extents,
     })
 }
 
@@ -421,15 +428,21 @@ fn parse_extent(data: &[u8]) -> Result<(u64, u64), String> {
 
 // ---------- Payload reader (seekable, range-backed, parallel) ----------
 
-// Fetches 8MiB chunks in parallel like ota_extract.py. Workers pull chunk keys
-// off a queue; a collector moves results into the cache; reads block only until
-// their own chunk lands (prefetch keeps later chunks streaming).
+struct ReaderInner {
+    cache: HashMap<u64, Arc<Vec<u8>>>,
+    inflight: HashSet<u64>,
+    errors: HashMap<u64, String>,
+}
+
+struct ReaderState {
+    inner: Mutex<ReaderInner>,
+    cond: std::sync::Condvar,
+}
+
 struct PayloadReader {
     size: u64,
     pos: u64,
-    cache: Arc<Mutex<HashMap<u64, Arc<Vec<u8>>>>>,
-    inflight: Arc<Mutex<HashSet<u64>>>,
-    errors: Arc<Mutex<HashMap<u64, String>>>,
+    state: Arc<ReaderState>,
     job_tx: mpsc::Sender<u64>,
     _workers: Vec<std::thread::JoinHandle<()>>,
 }
@@ -437,96 +450,111 @@ struct PayloadReader {
 impl PayloadReader {
     fn new(client: Arc<Client>, url: String, base: u64, size: u64) -> Self {
         let (job_tx, job_rx) = mpsc::channel::<u64>();
-        let (res_tx, res_rx) = mpsc::channel::<(u64, Result<Vec<u8>, String>)>();
-        let cache: Arc<Mutex<HashMap<u64, Arc<Vec<u8>>>>> = Arc::new(Mutex::new(HashMap::new()));
-        let inflight: Arc<Mutex<HashSet<u64>>> = Arc::new(Mutex::new(HashSet::new()));
-        let errors: Arc<Mutex<HashMap<u64, String>>> = Arc::new(Mutex::new(HashMap::new()));
         let job_rx = Arc::new(Mutex::new(job_rx));
+        let state = Arc::new(ReaderState {
+            inner: Mutex::new(ReaderInner {
+                cache: HashMap::new(),
+                inflight: HashSet::new(),
+                errors: HashMap::new(),
+            }),
+            cond: std::sync::Condvar::new(),
+        });
 
         let _workers: Vec<_> = (0..WORKERS)
             .map(|_| {
                 let client = client.clone();
                 let url = url.clone();
-                let base = base;
                 let job_rx = job_rx.clone();
-                let res_tx = res_tx.clone();
+                let state = state.clone();
                 std::thread::spawn(move || {
-                    while let Ok(key) = job_rx.lock().unwrap().recv() {
+                    loop {
+                        // Pop job WITHOUT holding the lock during HTTP fetch
+                        let key = {
+                            let Ok(rx) = job_rx.lock() else { break };
+                            match rx.recv() {
+                                Ok(k) => k,
+                                Err(_) => break,
+                            }
+                        }; // Lock is dropped here immediately before network I/O
+
                         let start = key * READAHEAD;
                         let end = ((start + READAHEAD).min(size)) - 1;
                         let res = fetch_range(&client, &url, base + start, base + end);
-                        if res_tx.send((key, res)).is_err() {
-                            break;
+
+                        {
+                            let mut inner = state.inner.lock().unwrap();
+                            match res {
+                                Ok(data) => {
+                                    inner.cache.insert(key, Arc::new(data));
+                                }
+                                Err(e) => {
+                                    inner.errors.insert(key, e);
+                                }
+                            }
+                            inner.inflight.remove(&key);
+                            state.cond.notify_all();
                         }
                     }
                 })
             })
             .collect();
 
-        // Collector thread: moves finished chunk fetches into the cache.
-        {
-            let cache = cache.clone();
-            let inflight = inflight.clone();
-            let errors = errors.clone();
-            std::thread::spawn(move || {
-                while let Ok((key, res)) = res_rx.recv() {
-                    match res {
-                        Ok(data) => {
-                            cache.lock().unwrap().insert(key, Arc::new(data));
-                        }
-                        Err(e) => {
-                            errors.lock().unwrap().insert(key, e);
-                        }
-                    }
-                    inflight.lock().unwrap().remove(&key);
-                }
-            });
-        }
-
         Self {
             size,
             pos: 0,
-            cache,
-            inflight,
-            errors,
+            state,
             job_tx,
             _workers,
         }
     }
 
     fn chunk(&self, key: u64) -> Result<Arc<Vec<u8>>, String> {
-        if let Some(d) = self.cache.lock().unwrap().get(&key).cloned() {
+        let mut inner = self.state.inner.lock().unwrap();
+
+        // 1. If already in cache or errored, return immediately!
+        if let Some(d) = inner.cache.get(&key).cloned() {
             return Ok(d);
         }
-        {
-            let mut inf = self.inflight.lock().unwrap();
-            if !inf.contains(&key) {
-                inf.insert(key);
-                for k in (key + 1)..(key + 1 + PREFETCH) {
-                    if k * READAHEAD >= self.size {
-                        break;
-                    }
-                    if !inf.contains(&k) {
-                        inf.insert(k);
-                        let _ = self.job_tx.send(k);
-                    }
+        if let Some(e) = inner.errors.get(&key).cloned() {
+            return Err(e);
+        }
+
+        // 2. Queue needed chunk FIRST, then queue prefetch chunks
+        if !inner.inflight.contains(&key) {
+            inner.inflight.insert(key);
+            let _ = self.job_tx.send(key); // Target chunk goes first!
+
+            for k in (key + 1)..(key + 1 + PREFETCH) {
+                if k * READAHEAD >= self.size {
+                    break;
                 }
-                let _ = self.job_tx.send(key);
+                if !inner.cache.contains_key(&k) && !inner.inflight.contains(&k) {
+                    inner.inflight.insert(k);
+                    let _ = self.job_tx.send(k);
+                }
             }
         }
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
-        loop {
-            if let Some(d) = self.cache.lock().unwrap().get(&key).cloned() {
-                return Ok(d);
-            }
-            if let Some(e) = self.errors.lock().unwrap().get(&key).cloned() {
-                return Err(e);
-            }
-            if std::time::Instant::now() >= deadline {
+
+        // 3. Wait on condvar without busy-polling sleep
+        let timeout = std::time::Duration::from_secs(120);
+        let start = std::time::Instant::now();
+        while !inner.cache.contains_key(&key) && !inner.errors.contains_key(&key) {
+            let elapsed = start.elapsed();
+            if elapsed >= timeout {
                 return Err(format!("Timed out waiting for payload chunk {key}"));
             }
-            std::thread::sleep(std::time::Duration::from_millis(20));
+            let remaining = timeout - elapsed;
+            let (new_inner, timeout_res) = self.state.cond.wait_timeout(inner, remaining).unwrap();
+            inner = new_inner;
+            if timeout_res.timed_out() && !inner.cache.contains_key(&key) && !inner.errors.contains_key(&key) {
+                return Err(format!("Timed out waiting for payload chunk {key}"));
+            }
         }
+
+        if let Some(e) = inner.errors.get(&key).cloned() {
+            return Err(e);
+        }
+        inner.cache.get(&key).cloned().ok_or_else(|| "Chunk missing".to_string())
     }
 
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, String> {
@@ -541,7 +569,6 @@ impl PayloadReader {
             let data = self.chunk(key)?;
             let take = (n - written).min(data.len().saturating_sub(off));
             if take == 0 {
-                // Chunk exhausted earlier than expected; advance to the next one.
                 self.pos = ((key + 1).saturating_mul(READAHEAD)).min(self.size);
                 continue;
             }
@@ -588,55 +615,38 @@ fn read_manifest(reader: &mut PayloadReader) -> Result<(Vec<Partition>, u64), St
     parse_manifest(&manifest_raw).map(|parts| (parts, data_offset))
 }
 
-// ---------- Public API ----------
+// ---------- Payload & Manifest Cache ----------
 
-pub fn list_partitions(url: &str) -> Result<Vec<PartitionInfo>, String> {
-    let c = client();
-    let c_arc = Arc::new(c.clone());
-    let mut urls = Vec::new();
-    let m = mirror_url(url);
-    if m != url {
-        urls.push(m);
-    }
-    urls.push(url.to_string());
-
-    let mut last_err = String::from("no candidates");
-    for u in &urls {
-        match locate_payload(&c, u) {
-            Ok((base, size)) => {
-                let mut reader = PayloadReader::new(c_arc.clone(), u.clone(), base, size);
-                match read_manifest(&mut reader) {
-                    Ok((parts, _data_offset)) => {
-                        let infos = parts
-                            .iter()
-                            .map(|p| {
-                                let bytes = p
-                                    .operations
-                                    .iter()
-                                    .map(|o| o.dst_blocks * BLOCK_SIZE)
-                                    .sum();
-                                PartitionInfo {
-                                    name: p.name.clone(),
-                                    size_bytes: bytes,
-                                }
-                            })
-                            .collect();
-                        return Ok(infos);
-                    }
-                    Err(e) => last_err = e,
-                }
-            }
-            Err(e) => last_err = e,
-        }
-    }
-    Err(format!("cannot open OTA: {last_err}"))
+#[derive(Clone)]
+struct CachedPayload {
+    url: String,
+    resolved_url: String,
+    base: u64,
+    size: u64,
+    data_offset: u64,
+    partitions: Vec<Partition>,
 }
 
-pub fn extract_partition(
-    url: &str,
-    partition_name: &str,
-    output_path: &str,
-) -> Result<String, String> {
+static CACHED_PAYLOAD: Mutex<Option<CachedPayload>> = Mutex::new(None);
+
+fn get_or_open_payload(url: &str) -> Result<(Arc<Client>, String, u64, u64, u64, Vec<Partition>), String> {
+    {
+        let guard = CACHED_PAYLOAD.lock().unwrap();
+        if let Some(cached) = guard.as_ref() {
+            if cached.url == url {
+                let c = client();
+                return Ok((
+                    Arc::new(c),
+                    cached.resolved_url.clone(),
+                    cached.base,
+                    cached.size,
+                    cached.data_offset,
+                    cached.partitions.clone(),
+                ));
+            }
+        }
+    }
+
     let c = client();
     let c_arc = Arc::new(c.clone());
     let mut urls = Vec::new();
@@ -653,12 +663,16 @@ pub fn extract_partition(
                 let mut reader = PayloadReader::new(c_arc.clone(), u.clone(), base, size);
                 match read_manifest(&mut reader) {
                     Ok((parts, data_offset)) => {
-                        let partition = parts
-                            .iter()
-                            .find(|p| p.name == partition_name)
-                            .ok_or_else(|| format!("Partition \"{partition_name}\" not found in OTA"))?;
-                        return write_partition(&mut reader, partition, data_offset, output_path)
-                            .map(|_| format!("{partition_name}.img saved"));
+                        let mut guard = CACHED_PAYLOAD.lock().unwrap();
+                        *guard = Some(CachedPayload {
+                            url: url.to_string(),
+                            resolved_url: u.clone(),
+                            base,
+                            size,
+                            data_offset,
+                            partitions: parts.clone(),
+                        });
+                        return Ok((c_arc, u.clone(), base, size, data_offset, parts));
                     }
                     Err(e) => last_err = e,
                 }
@@ -667,6 +681,44 @@ pub fn extract_partition(
         }
     }
     Err(format!("cannot open OTA: {last_err}"))
+}
+
+// ---------- Public API ----------
+
+pub fn list_partitions(url: &str) -> Result<Vec<PartitionInfo>, String> {
+    let (_c, _u, _base, _size, _data_off, parts) = get_or_open_payload(url)?;
+    let infos = parts
+        .iter()
+        .map(|p| {
+            let bytes = p
+                .operations
+                .iter()
+                .flat_map(|o| &o.dst_extents)
+                .map(|e| e.num_blocks * BLOCK_SIZE)
+                .sum();
+            PartitionInfo {
+                name: p.name.clone(),
+                size_bytes: bytes,
+            }
+        })
+        .collect();
+    Ok(infos)
+}
+
+pub fn extract_partition(
+    url: &str,
+    partition_name: &str,
+    output_path: &str,
+) -> Result<String, String> {
+    let (c_arc, u, base, size, data_offset, parts) = get_or_open_payload(url)?;
+    let partition = parts
+        .iter()
+        .find(|p| p.name == partition_name)
+        .ok_or_else(|| format!("Partition \"{partition_name}\" not found in OTA"))?;
+
+    let mut reader = PayloadReader::new(c_arc, u, base, size);
+    write_partition(&mut reader, partition, data_offset, output_path)?;
+    Ok(format!("{partition_name}.img saved"))
 }
 
 fn write_partition(
@@ -680,67 +732,86 @@ fn write_partition(
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let mut out_f = std::fs::File::create(out).map_err(|e| e.to_string())?;
+    let mut buf = vec![0u8; 1 << 20];
 
     for op in &partition.operations {
-        let block_count = op.dst_blocks * BLOCK_SIZE;
-        let dest_off = op.dst_extent_start * BLOCK_SIZE;
         match op.op_type {
             // REPLACE
             0 => {
                 reader.pos = data_offset + op.data_offset;
-                let mut buf = vec![0u8; 1 << 20];
-                let mut written_total = 0u64;
-                out_f
-                    .seek(SeekFrom::Start(dest_off))
-                    .map_err(|e| e.to_string())?;
-                while written_total < op.data_length {
-                    let need = ((op.data_length - written_total) as usize).min(buf.len());
-                    let n = reader.read(&mut buf[..need])?;
-                    if n == 0 {
-                        break;
+                for ext in &op.dst_extents {
+                    let ext_bytes = ext.num_blocks * BLOCK_SIZE;
+                    let dest_off = ext.start_block * BLOCK_SIZE;
+                    out_f
+                        .seek(SeekFrom::Start(dest_off))
+                        .map_err(|e| e.to_string())?;
+                    let mut written = 0u64;
+                    while written < ext_bytes {
+                        let need = ((ext_bytes - written) as usize).min(buf.len());
+                        let n = reader.read(&mut buf[..need])?;
+                        if n == 0 {
+                            break;
+                        }
+                        out_f.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+                        written += n as u64;
                     }
-                    out_f.write_all(&buf[..n]).map_err(|e| e.to_string())?;
-                    written_total += n as u64;
                 }
             }
             // REPLACE_BZ
             1 => {
                 let data = read_op_data(reader, data_offset + op.data_offset, op.data_length)?;
                 let decomp = decompress_bz2(&data)?;
-                out_f
-                    .seek(SeekFrom::Start(dest_off))
-                    .map_err(|e| e.to_string())?;
-                out_f.write_all(&decomp).map_err(|e| e.to_string())?;
+                write_extents(&mut out_f, &op.dst_extents, &decomp)?;
             }
             // ZERO
             6 => {
-                out_f
-                    .seek(SeekFrom::Start(dest_off))
-                    .map_err(|e| e.to_string())?;
-                let zeros = vec![0u8; 1 << 20];
-                let mut written_total = 0u64;
-                while written_total < block_count {
-                    let need = ((block_count - written_total) as usize).min(zeros.len());
+                for ext in &op.dst_extents {
+                    let ext_bytes = ext.num_blocks * BLOCK_SIZE;
+                    let dest_off = ext.start_block * BLOCK_SIZE;
                     out_f
-                        .write_all(&zeros[..need])
+                        .seek(SeekFrom::Start(dest_off))
                         .map_err(|e| e.to_string())?;
-                    written_total += need as u64;
+                    let zeros = [0u8; 4096];
+                    let mut written = 0u64;
+                    while written < ext_bytes {
+                        let step = ((ext_bytes - written) as usize).min(zeros.len());
+                        out_f
+                            .write_all(&zeros[..step])
+                            .map_err(|e| e.to_string())?;
+                        written += step as u64;
+                    }
                 }
             }
             // REPLACE_XZ
             8 => {
                 let data = read_op_data(reader, data_offset + op.data_offset, op.data_length)?;
                 let decomp = decompress_xz(&data)?;
-                out_f
-                    .seek(SeekFrom::Start(dest_off))
-                    .map_err(|e| e.to_string())?;
-                out_f.write_all(&decomp).map_err(|e| e.to_string())?;
+                write_extents(&mut out_f, &op.dst_extents, &decomp)?;
             }
             other => {
                 return Err(format!(
                     "unhandled operation type ({other}). Only REPLACE / REPLACE_BZ / REPLACE_XZ / ZERO supported"
                 ));
             }
+        }
+    }
+    Ok(())
+}
+
+fn write_extents(out_f: &mut std::fs::File, extents: &[Extent], data: &[u8]) -> Result<(), String> {
+    let mut offset = 0usize;
+    for ext in extents {
+        let ext_bytes = (ext.num_blocks * BLOCK_SIZE) as usize;
+        let dest_off = ext.start_block * BLOCK_SIZE;
+        out_f
+            .seek(SeekFrom::Start(dest_off))
+            .map_err(|e| e.to_string())?;
+        let end = (offset + ext_bytes).min(data.len());
+        if offset < end {
+            out_f
+                .write_all(&data[offset..end])
+                .map_err(|e| e.to_string())?;
+            offset = end;
         }
     }
     Ok(())

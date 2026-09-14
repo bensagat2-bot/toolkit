@@ -46,3 +46,7 @@ debug = false
 opt-level = "s"
 strip = true
 debug = false
+
+[profile.release.package.lzma-rs]
+opt-level = 3
+

@@ -581,6 +581,16 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     };
     emit(&app, format!("Patching complete: {}", patched_local).as_str());
 
+    // Keep the patched image for the user: a copy in the v1per-toolkit-files
+    // folder and one directly in Downloads, so it can be re-flashed later via
+    // fastboot without running the whole patch flow again.
+    let patched_name = format!("patched_{}.img", part_name);
+    let patched_saved = files_dir.join(&patched_name);
+    std::fs::copy(&patched_local, &patched_saved)
+        .map_err(|e| format!("Failed to save patched image: {e}"))?;
+    std::fs::copy(&patched_local, downloads_dir().join(&patched_name)).ok();
+    emit(&app, format!("Patched image saved -> {}", patched_saved.display()).as_str());
+
     // Remove the helper binaries and images we pushed to the device. The
     // patched image is already pulled to the PC, so nothing on the phone is
     // needed for the fastboot flash.
@@ -601,8 +611,9 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     }
     emit(&app, "Cleaning up... DONE");
 
-    flash_patched(&app, &serial, part_name, &patched_local)?;
+    flash_patched(&app, &serial, part_name, patched_saved.to_string_lossy().as_ref())?;
 
+    // Scratch copy in the temp dir is no longer needed; the Downloads copies stay.
     let _ = std::fs::remove_file(Path::new(&patched_local));
 
     let elapsed = started.elapsed().as_secs();
