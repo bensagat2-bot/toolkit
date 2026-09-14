@@ -1,6 +1,7 @@
 pub mod adb;
 pub mod account;
 pub mod backup;
+pub mod debloat;
 pub mod device;
 pub mod fastboot;
 pub mod frbox;

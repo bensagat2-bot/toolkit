@@ -483,6 +483,29 @@ pub async fn utils_scrcpy(app: tauri::AppHandle) -> Result<bool, String> {
         .map_err(|e| format!("Scrcpy task failed: {e}"))?
 }
 
+// ── Debloat Commands ─────────────────────────────────────────
+
+#[command]
+pub async fn debloat_list_packages() -> Result<Vec<crate::services::debloat::AppInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::debloat::list_packages())
+        .await
+        .map_err(|e| format!("Debloat task failed: {e}"))?
+}
+
+#[command]
+pub async fn debloat_uninstall(package_name: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::debloat::uninstall_package(package_name))
+        .await
+        .map_err(|e| format!("Debloat task failed: {e}"))?
+}
+
+#[command]
+pub async fn debloat_enable(package_name: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::debloat::enable_package(package_name))
+        .await
+        .map_err(|e| format!("Debloat task failed: {e}"))?
+}
+
 // ── Xiaomi Commands ──────────────────────────────────────────
 
 #[command]

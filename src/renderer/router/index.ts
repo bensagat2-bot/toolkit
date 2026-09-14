@@ -58,6 +58,11 @@ const router = createRouter({
       component: () => import('@/pages/Terminal/index.vue'),
     },
     {
+      path: '/debloat',
+      name: 'Debloat',
+      component: () => import('@/pages/Debloat/index.vue'),
+    },
+    {
       path: '/backup',
       name: 'Backup',
       component: () => import('@/pages/Backup/index.vue'),
