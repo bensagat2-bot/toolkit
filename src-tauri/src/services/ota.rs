@@ -1022,7 +1022,7 @@ fn list_remote_zip_images(c: &Client, url: &str) -> Result<Vec<FastbootImageInfo
                 if id == 0x0001 {
                     let mut k = 0usize;
                     if size == 0xFFFF_FFFF && ds + k + 8 <= extra.len() { size = u64le(extra, ds + k); k += 8; }
-                    if compressed_is_z64 && ds + k + 8 <= extra.len() { k += 8; }
+                    // compressed_is_z64 field is present but we skip it (not needed for listing)
                     break;
                 }
                 q += 4 + flen;

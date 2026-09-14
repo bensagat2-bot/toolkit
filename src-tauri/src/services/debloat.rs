@@ -66,11 +66,11 @@ fn extract_app_label_from_dump(dump: &str) -> Option<String> {
     for line in dump.lines() {
         let t = line.trim();
         if t.starts_with("application-label:") {
-            let label = t.split(':').nth(1).unwrap_or("").trim().trim('\'').trim('"');
+            let label = t.split(':').nth(1).unwrap_or("").trim().trim_matches(|c| c == '\'' || c == '"');
             if !label.is_empty() { return Some(label.to_string()); }
         }
         if let Some(start) = t.find("android:label=") {
-            let val = t[start + 14..].trim().trim('\'').trim('"');
+            let val = t[start + 14..].trim().trim_matches(|c| c == '\'' || c == '"');
             if !val.is_empty() && val != "null" && val != "@null" {
                 return Some(val.to_string());
             }
