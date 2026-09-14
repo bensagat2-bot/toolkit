@@ -40,7 +40,7 @@
     "resources": [],
     "windows": {
       "nsis": {
-        "installMode": "admin",
+        "installMode": "machine",
         "displayLanguageSelector": true,
         "installerHooks": "installer-hooks.nsh"
       }
