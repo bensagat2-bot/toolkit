@@ -69,7 +69,7 @@ pub fn patch_boot_to(da: &mut [u8], analyzer: &Analyzer) -> Result<bool> {
 
     let is_arm64 = matches!(analyzer, Analyzer::Aarch64(_));
 
-    let extloader = get_v6_payload(EXT_LOADER, is_arm64);
+    let extloader = get_v6_payload(EXT_LOADER, is_arm64).ok_or_else(|| crate::error::Error::ParseError("Invalid Ext-Loader v6 payload".into()))?;
 
     let Some(rsc_func_off) = analyzer.fn_from_str("RSC file") else {
         warn!("Could not find RSC function to inject Ext-Loader!");
@@ -180,7 +180,7 @@ fn patch_da_sla(da: &mut [u8], analyzer: &Analyzer) -> Result<bool> {
 
     let is_64bit = matches!(analyzer, Analyzer::Aarch64(_));
 
-    let mut payload = get_v6_payload(SLA_BYPASS, is_64bit).to_vec();
+    let mut payload = get_v6_payload(SLA_BYPASS, is_64bit).ok_or_else(|| crate::error::Error::ParseError("Invalid SLA bypass v6 payload".into()))?.to_vec();
 
     patch_u32(&mut payload, DOWNLOAD_MAGIC, download_ptr)?;
     patch_u32(&mut payload, CMDS_MAGIC, reg_sec_cmds_ptr)?;

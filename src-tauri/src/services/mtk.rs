@@ -67,7 +67,9 @@ pub fn connect(
     auth_path: Option<String>,
     timeout_secs: u32,
 ) -> Result<serde_json::Value, String> {
-    *SESSION.lock().unwrap() = None;
+    if let Ok(mut guard) = SESSION.lock() {
+        *guard = None;
+    }
 
     let timeout = Duration::from_secs(timeout_secs.clamp(1, 600) as u64);
     let poll_interval = Duration::from_millis(250);
@@ -133,7 +135,9 @@ pub fn connect(
         partitions = device.partitions().iter().map(|p| p.name.clone()).collect();
     }
 
-    *SESSION.lock().unwrap() = Some(device);
+    if let Ok(mut guard) = SESSION.lock() {
+        *guard = Some(device);
+    }
 
     emit(&app, "done", if da_loaded { "DA loaded.".to_string() } else { "Connected (preloader mode).".to_string() });
 
@@ -376,7 +380,9 @@ pub fn load_scatter(path: &str) -> Result<serde_json::Value, String> {
 /// Connects to the device and flashes all downloadable partitions from the scatter file.
 pub fn flash(app: AppHandle, opts: FlashOptions) -> Result<serde_json::Value, String> {
     let started = Instant::now();
-    *SESSION.lock().unwrap() = None;
+    if let Ok(mut guard) = SESSION.lock() {
+        *guard = None;
+    }
 
     let timeout = Duration::from_secs(opts.timeout_secs.unwrap_or(120).clamp(1, 600) as u64);
     let deadline = Instant::now() + timeout;
@@ -493,7 +499,9 @@ pub fn flash(app: AppHandle, opts: FlashOptions) -> Result<serde_json::Value, St
         total_bytes += size;
     }
 
-    *SESSION.lock().unwrap() = Some(device);
+    if let Ok(mut guard) = SESSION.lock() {
+        *guard = Some(device);
+    }
 
     let mut session = SESSION.lock().map_err(|_| "Session lock poisoned".to_string())?;
     if let Some(mut d) = session.take() {

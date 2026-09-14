@@ -8,7 +8,7 @@ use flate2::read::DeflateDecoder;
 use reqwest::blocking::Client;
 use serde::Serialize;
 
-const PDS_API: &str = "https://fra315.api.aliyunpds.com";
+use crate::config::PDS_API_BASE as PDS_API;
 
 const EOCD_SIGNATURE: u32 = 0x06054b50;
 const ZIP64_EOCD_LOCATOR_SIGNATURE: u32 = 0x07064b50;

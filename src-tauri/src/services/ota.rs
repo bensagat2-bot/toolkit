@@ -6,7 +6,8 @@ use flate2::read::GzDecoder;
 use reqwest::blocking::Client;
 use serde::Serialize;
 
-const MIRROR_HOST: &str = "bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com";
+use crate::config::OTA_MIRROR_HOST;
+
 const BLOCK_SIZE: u64 = 4096;
 const PAYLOAD_MEMBER: &str = "payload.bin";
 const READAHEAD: u64 = 8 * 1024 * 1024;
@@ -20,7 +21,7 @@ pub fn mirror_url(url: &str) -> String {
             let scheme = &url[..colon + 3];
             let rest = &url[colon + 3..];
             if let Some(slash) = rest.find('/') {
-                return format!("{scheme}{MIRROR_HOST}{}", &rest[slash..]);
+                return format!("{scheme}{OTA_MIRROR_HOST}{}", &rest[slash..]);
             }
         }
     }
@@ -31,7 +32,7 @@ fn client() -> Client {
     Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         .connect_timeout(std::time::Duration::from_secs(10))
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(300))
         .pool_max_idle_per_host(WORKERS + 4)
         .tcp_keepalive(std::time::Duration::from_secs(60))
         .build()
@@ -580,18 +581,31 @@ impl PayloadReader {
     }
 }
 
-fn decompress_xz(data: &[u8]) -> Result<Vec<u8>, String> {
+fn decompress_xz(data: &[u8], expected_size: u64) -> Result<Vec<u8>, String> {
     let mut out = Vec::new();
-    lzma_rs::xz_decompress(&mut std::io::Cursor::new(data), &mut out)
+    let mut dec = xz2::read::XzDecoder::new(data);
+    dec.read_to_end(&mut out)
         .map_err(|e| format!("xz decompress failed: {e}"))?;
+    if out.len() as u64 != expected_size {
+        return Err(format!(
+            "xz size mismatch: got {} expected {expected_size}",
+            out.len()
+        ));
+    }
     Ok(out)
 }
 
-fn decompress_bz2(data: &[u8]) -> Result<Vec<u8>, String> {
+fn decompress_bz2(data: &[u8], expected_size: u64) -> Result<Vec<u8>, String> {
     let mut out = Vec::new();
-    let mut dec = bzip2_rs::DecoderReader::new(std::io::Cursor::new(data));
+    let mut dec = bzip2::read::BzDecoder::new(data);
     dec.read_to_end(&mut out)
         .map_err(|e| format!("bz2 decompress failed: {e}"))?;
+    if out.len() as u64 != expected_size {
+        return Err(format!(
+            "bz2 size mismatch: got {} expected {expected_size}",
+            out.len()
+        ));
+    }
     Ok(out)
 }
 
@@ -602,9 +616,12 @@ fn read_manifest(reader: &mut PayloadReader) -> Result<(Vec<Partition>, u64), St
     if &head[0..4] != b"CrAU" {
         return Err("invalid payload magic".to_string());
     }
-    let version = u64::from_be_bytes(head[4..12].try_into().unwrap());
-    let manifest_len = u64::from_be_bytes(head[12..20].try_into().unwrap());
-    let metadata_signature_len = u32::from_be_bytes(head[20..24].try_into().unwrap());
+    let version_arr: [u8; 8] = head[4..12].try_into().map_err(|_| "invalid payload version bytes")?;
+    let manifest_len_arr: [u8; 8] = head[12..20].try_into().map_err(|_| "invalid manifest length bytes")?;
+    let metadata_signature_len_arr: [u8; 4] = head[20..24].try_into().map_err(|_| "invalid metadata signature length bytes")?;
+    let version = u64::from_be_bytes(version_arr);
+    let manifest_len = u64::from_be_bytes(manifest_len_arr);
+    let metadata_signature_len = u32::from_be_bytes(metadata_signature_len_arr);
     if version != 2 {
         return Err(format!("unsupported payload version ({version})"));
     }
@@ -732,35 +749,25 @@ fn write_partition(
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let mut out_f = std::fs::File::create(out).map_err(|e| e.to_string())?;
-    let mut buf = vec![0u8; 1 << 20];
 
     for op in &partition.operations {
+        let expected_size: u64 = op.dst_extents.iter().map(|e| e.num_blocks * BLOCK_SIZE).sum();
         match op.op_type {
             // REPLACE
             0 => {
-                reader.pos = data_offset + op.data_offset;
-                for ext in &op.dst_extents {
-                    let ext_bytes = ext.num_blocks * BLOCK_SIZE;
-                    let dest_off = ext.start_block * BLOCK_SIZE;
-                    out_f
-                        .seek(SeekFrom::Start(dest_off))
-                        .map_err(|e| e.to_string())?;
-                    let mut written = 0u64;
-                    while written < ext_bytes {
-                        let need = ((ext_bytes - written) as usize).min(buf.len());
-                        let n = reader.read(&mut buf[..need])?;
-                        if n == 0 {
-                            break;
-                        }
-                        out_f.write_all(&buf[..n]).map_err(|e| e.to_string())?;
-                        written += n as u64;
-                    }
+                let data = read_op_data(reader, data_offset + op.data_offset, op.data_length)?;
+                if data.len() as u64 != expected_size {
+                    return Err(format!(
+                        "REPLACE size mismatch: got {} expected {expected_size}",
+                        data.len()
+                    ));
                 }
+                write_extents(&mut out_f, &op.dst_extents, &data)?;
             }
             // REPLACE_BZ
             1 => {
                 let data = read_op_data(reader, data_offset + op.data_offset, op.data_length)?;
-                let decomp = decompress_bz2(&data)?;
+                let decomp = decompress_bz2(&data, expected_size)?;
                 write_extents(&mut out_f, &op.dst_extents, &decomp)?;
             }
             // ZERO
@@ -785,7 +792,7 @@ fn write_partition(
             // REPLACE_XZ
             8 => {
                 let data = read_op_data(reader, data_offset + op.data_offset, op.data_length)?;
-                let decomp = decompress_xz(&data)?;
+                let decomp = decompress_xz(&data, expected_size)?;
                 write_extents(&mut out_f, &op.dst_extents, &decomp)?;
             }
             other => {
@@ -824,7 +831,7 @@ fn read_op_data(reader: &mut PayloadReader, offset: u64, length: u64) -> Result<
     while done < buf.len() {
         let n = reader.read(&mut buf[done..])?;
         if n == 0 {
-            break;
+            return Err(format!("short read: got {done} of {length} bytes"));
         }
         done += n;
     }

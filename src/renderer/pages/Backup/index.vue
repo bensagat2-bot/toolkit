@@ -5,6 +5,11 @@
       <span class="tagline">Partition backups saved to Downloads/v1per-user-backups</span>
     </div>
 
+    <div v-if="errorMsg || toastMsg" class="toast-bar" :class="toastType">
+      <span>{{ errorMsg || toastMsg }}</span>
+      <button class="btn-link" @click="errorMsg = ''; toastMsg = ''">&times;</button>
+    </div>
+
     <div v-if="!loaded" class="backup-loading">Loading backups...</div>
 
     <div v-else-if="cards.length === 0" class="backup-empty">
@@ -97,6 +102,9 @@ const activeCard = ref(null)
 const selectedSet = ref([])
 const editingName = ref(null)
 const nameDraft = ref('')
+const toastMsg = ref('')
+const toastType = ref('')
+const errorMsg = ref('')
 
 const selected = computed(() => [...selectedSet.value])
 const allSelected = computed(() => activeCard.value?.files.length > 0 && selectedSet.value.length === activeCard.value.files.length)
@@ -112,7 +120,9 @@ const load = async () => {
   loaded.value = false
   try {
     cards.value = await sendIpcToMain('backup_list')
-  } catch {
+  } catch (e) {
+    console.error('Failed to load backups:', e)
+    errorMsg.value = 'Failed to load backups.'
     cards.value = []
   } finally {
     loaded.value = true
@@ -143,9 +153,11 @@ const downloadSelected = async () => {
       selected: selected.value,
       dest: folder,
     })
-    alert(`Downloaded ${n} partition(s) to ${folder}`)
+    toastMsg.value = `Downloaded ${n} partition(s) to ${folder}`
+    toastType.value = 'success'
   } catch (e) {
-    alert(`Download failed: ${e}`)
+    errorMsg.value = `Download failed: ${e}`
+    toastType.value = 'error'
   }
 }
 
@@ -163,17 +175,20 @@ const commitRename = async (oldName) => {
     await sendIpcToMain('backup_rename', { old: oldName, new: newName })
     await load()
   } catch (e) {
-    alert(`Rename failed: ${e}`)
+    errorMsg.value = `Rename failed: ${e}`
+    toastType.value = 'error'
   }
 }
 
 const deleteCard = async (card) => {
-  if (!confirm(`Delete backup "${card.name}"? This removes its folder in Downloads.`)) return
   try {
+    const ok = await sendIpcToMain('confirm_action', { message: `Delete backup "${card.name}"? This removes its folder in Downloads.` })
+    if (!ok) return
     await sendIpcToMain('backup_delete', { name: card.name })
     await load()
   } catch (e) {
-    alert(`Delete failed: ${e}`)
+    errorMsg.value = `Delete failed: ${e}`
+    toastType.value = 'error'
   }
 }
 
@@ -187,20 +202,20 @@ onMounted(load)
 .backup-card { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid var(--border-primary); border-radius: 10px; background: var(--bg-tertiary); animation: cardIn 0.4s ease; }
 .backup-card.placeholder { border-style: dashed; align-items: center; justify-content: center; text-align: center; min-height: 150px; }
 .backup-empty { flex: 1; display: flex; align-items: center; justify-content: center; }
-.empty-card { text-align: center; padding: 40px; border: 1px dashed var(--border-primary); border-radius: 12px; background: var(--bg-tertiary); display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.empty-card { text-align: center; padding: 40px; border: 1px dashed var(--border-primary); border-radius: 12px; background: var(--bg-tertiary); display: flex; flex-direction: column; gap: 10px; align-items: center; h3 { font-size: 16px; margin: 0; } }
 .card-head { display: flex; align-items: center; gap: 6px; }
-.card-name { margin: 0; font-size: 15px; flex: 1; cursor: pointer; }
+.card-name { margin: 0; font-size: 16px; flex: 1; cursor: pointer; }
 .card-name-input { flex: 1; font-size: 14px; background: var(--bg-secondary); border: 1px solid var(--accent-primary); border-radius: 4px; padding: 2px 6px; color: var(--text-primary); outline: none; }
 .card-edit { cursor: pointer; color: var(--text-secondary); font-size: 13px; &:hover { color: var(--accent-primary); } }
 .card-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); }
-.card-stats { font-size: 13px; font-weight: 600; color: var(--accent-primary); }
+.card-stats { font-size: 12px; font-weight: 600; color: var(--accent-primary); }
 .card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
 .placeholder-text { color: var(--text-secondary); font-size: 12px; margin: 0; }
 .backup-loading { color: var(--text-secondary); font-size: 13px; }
 
 .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { width: min(560px, 90vw); max-height: 80vh; display: flex; flex-direction: column; background: var(--bg-primary); border: 1px solid var(--border-primary); border-radius: 12px; overflow: hidden; }
-.modal-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: var(--color-list-header-border-bottom); h3 { margin: 0; font-size: 15px; } }
+.modal-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: var(--color-list-header-border-bottom); h3 { margin: 0; font-size: 16px; } }
 .modal-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: var(--color-list-header-border-bottom); flex-wrap: wrap; }
 .modal-hint { font-size: 11px; color: var(--text-secondary); }
 .modal-list { overflow-y: auto; padding: 8px 16px; }
@@ -209,7 +224,10 @@ onMounted(load)
 .part-size { color: var(--text-secondary); font-size: 12px; }
 .modal-empty { color: var(--text-secondary); padding: 20px 0; text-align: center; }
 
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border-primary); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font-size: 12px; cursor: pointer; transition: all 0.15s; white-space: nowrap; &:hover:not(:disabled) { border-color: var(--accent-primary); } &:disabled { opacity: 0.4; cursor: not-allowed; } &.btn-sm { padding: 4px 8px; font-size: 11px; } &.btn-primary { background: var(--accent-primary); color: #fff; border-color: var(--accent-primary); } &.btn-danger { color: #f44336; } }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border-primary); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font-size: 12px; cursor: pointer; transition: all 0.15s; white-space: nowrap; &:hover:not(:disabled) { border-color: var(--accent-primary); } &:disabled { opacity: 0.4; cursor: not-allowed; } &.btn-sm { padding: 4px 8px; font-size: 11px; } &.btn-primary { background: var(--accent-primary); color: #fff; border-color: var(--accent-primary); } &.btn-danger { color: var(--color-status-error); } }
 .btn-link { background: none; border: none; color: var(--accent-primary); font-size: 12px; cursor: pointer; padding: 0; &:hover { text-decoration: underline; } }
+.toast-bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 8px; }
+.toast-bar.success { background: rgba(76, 175, 80, 0.15); color: var(--color-status-success); }
+.toast-bar.error { background: rgba(244, 67, 54, 0.15); color: var(--color-status-error); }
 @keyframes cardIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
 </style>

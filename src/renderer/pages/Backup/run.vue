@@ -1,7 +1,7 @@
 <template>
   <div class="backup-run-page">
     <div class="run-header">
-      <button class="btn" @click="goBack" :disabled="busy">Back</button>
+      <button class="btn" @click="goBack">Back</button>
       <span>Backup - {{ pending?.name }}</span>
       <span class="elapsed">Elapsed: {{ elapsed }}s</span>
     </div>
@@ -24,7 +24,7 @@
 <script setup>
 import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
-import { sendIpcToMain, rendererOn } from '@renderer/utils/ipc'
+import { sendIpcToMain, sendIpcWithTimeout, rendererOn } from '@renderer/utils/ipc'
 import { useBackupRunStore } from './runStore'
 import { createRunLog } from '@renderer/utils/runLog'
 import { useOperationStore } from '@renderer/store/operationStore'
@@ -37,6 +37,7 @@ const busy = ref(false)
 const elapsed = ref(0)
 const terminalRef = ref(null)
 let elapsedTimer = null
+let unlistenProgress = null
 
 const jobLabel = computed(() => (pending.value ? `Backup - ${pending.value.name}` : ''))
 
@@ -44,8 +45,10 @@ watch(() => logLines.value.length, () => {
   nextTick(() => { if (terminalRef.value) terminalRef.value.scrollTop = terminalRef.value.scrollHeight })
 })
 
-const goBack = () => {
-  if (busy.value) return
+const goBack = async () => {
+  if (busy.value) {
+    try { await sendIpcToMain('stop_process') } catch {}
+  }
   router.push({ path: '/backup' })
 }
 
@@ -59,7 +62,7 @@ async function runJob() {
   elapsed.value = 0
   elapsedTimer = setInterval(() => { elapsed.value += 1 }, 1000)
   try {
-    await sendIpcToMain('backup_start', { name: pending.value.name })
+    await sendIpcWithTimeout('backup_start', { name: pending.value.name }, 300000)
     queueLog('Done.', 'success')
   } catch (e) {
     queueLog(`Failed: ${e}`, 'error')
@@ -77,12 +80,13 @@ const onProgress = (_event, data) => {
 }
 
 onMounted(async () => {
-  await rendererOn('backup:progress', onProgress)
+  unlistenProgress = await rendererOn('backup:progress', onProgress)
   runJob()
 })
 
 onBeforeUnmount(() => {
   if (elapsedTimer) clearInterval(elapsedTimer)
+  if (unlistenProgress) unlistenProgress()
   stopLog()
   opStore.setBusy(false)
 })
@@ -90,14 +94,4 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .backup-run-page { height: 100%; display: flex; flex-direction: column; padding: 16px; gap: 16px; animation: pageIn 0.35s ease; }
-.run-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--color-primary-light-500); font-size: 12px; color: var(--text-secondary); span.elapsed { color: var(--accent-primary); font-weight: 600; } }
-.run-log-card { flex: 1; display: flex; flex-direction: column; border: 1px solid var(--border-primary); border-radius: 6px; overflow: hidden; min-height: 0; animation: cardIn 0.45s ease; }
-.terminal-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border-bottom: var(--color-list-header-border-bottom); span { font-size: 12px; color: var(--color-font); } }
-.terminal-body { flex: 1; overflow-y: auto; padding: 10px 14px; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 15px; line-height: 1.6; }
-.log-line { white-space: pre-wrap; word-break: break-all; &.info { color: #000; } &.success { color: #4caf50; } &.warn { color: #ff9800; } &.error { color: #f44336; } .resp { color: #1a9e31; font-weight: 700; } }
-.log-empty { color: var(--text-secondary); font-style: italic; }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border-primary); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 12px; cursor: pointer; transition: all 0.15s; white-space: nowrap; &:hover:not(:disabled) { border-color: var(--accent-primary); } &:disabled { opacity: 0.4; cursor: not-allowed; } }
-.btn-link { background: none; border: none; color: var(--accent-primary); font-size: 12px; cursor: pointer; padding: 0; &:hover:not(:disabled) { text-decoration: underline; } &:disabled { opacity: 0.4; cursor: not-allowed; } }
-@keyframes pageIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes cardIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
 </style>

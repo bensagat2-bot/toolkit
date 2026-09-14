@@ -15,12 +15,11 @@
       </main>
       <PlayBar id="player" />
     </div>
-    <div v-if="opBusy" class="op-blocker" aria-hidden="true"></div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { onMounted } from 'vue'
 import Splash from '@/components/layout/Splash.vue'
 import Aside from '@/components/layout/Aside.vue'
 import Toolbar from '@/components/layout/Toolbar.vue'
@@ -28,11 +27,8 @@ import PlayBar from '@/components/layout/PlayBar.vue'
 import AuthPage from '@/pages/Auth/index.vue'
 import Banned from '@/pages/Auth/Banned.vue'
 import { useAccountStore } from '@/store/accountStore'
-import { useOperationStore } from '@/store/operationStore'
 
 const store = useAccountStore()
-const opStore = useOperationStore()
-const opBusy = computed(() => opStore.busy)
 
 onMounted(() => {
   store.init()
@@ -102,10 +98,5 @@ onMounted(() => {
   transform: translateY(-6px);
 }
 
-.op-blocker {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  cursor: progress;
-}
+
 </style>

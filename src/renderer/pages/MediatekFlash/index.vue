@@ -1,7 +1,7 @@
 <template>
   <div class="flash-page">
     <div class="flash-header">
-      <button class="btn" @click="goBack" :disabled="busy">Back</button>
+      <button class="btn" @click="goBack">Back</button>
       <span>Flashing {{ pending?.partitions?.length ?? 0 }} partitions</span>
       <span class="elapsed">Elapsed: {{ elapsed }}s</span>
     </div>
@@ -24,7 +24,7 @@
 <script setup>
 import { ref, nextTick, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
-import { sendIpcToMain, rendererOn } from '@renderer/utils/ipc'
+import { sendIpcToMain, sendIpcWithTimeout, rendererOn } from '@renderer/utils/ipc'
 import { useMtkFlashStore } from '@renderer/store/mtkFlashStore'
 import { createRunLog } from '@renderer/utils/runLog'
 
@@ -40,8 +40,10 @@ watch(() => logLines.value.length, () => {
   nextTick(() => { if (terminalRef.value) terminalRef.value.scrollTop = terminalRef.value.scrollHeight })
 })
 
-const goBack = () => {
-  if (busy.value) return
+const goBack = async () => {
+  if (busy.value) {
+    try { await sendIpcToMain('stop_process') } catch {}
+  }
   router.push({ path: '/mediatek' })
 }
 
@@ -54,7 +56,7 @@ async function runFlash() {
   elapsed.value = 0
   elapsedTimer = setInterval(() => { elapsed.value += 1 }, 1000)
   try {
-    await sendIpcToMain('mtk_flash', { opts: pending.value })
+    await sendIpcWithTimeout('mtk_flash', { opts: pending.value }, 300000)
     queueLog('Flash complete.', 'success')
   } catch (e) {
     queueLog(`Flash failed: ${e}`, 'error')
@@ -87,7 +89,7 @@ onBeforeUnmount(() => {
 .flash-log-card { flex: 1; display: flex; flex-direction: column; border: 1px solid var(--border-primary); border-radius: 6px; overflow: hidden; min-height: 0; animation: cardIn 0.45s ease; }
 .terminal-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border-bottom: var(--color-list-header-border-bottom); span { font-size: 12px; color: var(--color-font); } }
 .terminal-body { flex: 1; overflow-y: auto; padding: 10px 14px; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 15px; line-height: 1.6; }
-.log-line { white-space: pre-wrap; word-break: break-all; &.info { color: #000; } &.success { color: #4caf50; } &.warn { color: #ff9800; } &.error { color: #f44336; } .resp { color: #1a9e31; font-weight: 700; } }
+.log-line { white-space: pre-wrap; word-break: break-all; &.info { color: var(--text-primary); } &.success { color: #4caf50; } &.warn { color: #ff9800; } &.error { color: #f44336; } .resp { color: #1a9e31; font-weight: 700; } }
 .log-empty { color: var(--text-secondary); font-style: italic; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border-primary); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 12px; cursor: pointer; transition: all 0.15s; white-space: nowrap; &:hover:not(:disabled) { border-color: var(--accent-primary); } &:disabled { opacity: 0.4; cursor: not-allowed; } }
 .btn-link { background: none; border: none; color: var(--accent-primary); font-size: 11px; cursor: pointer; padding: 0; &:hover:not(:disabled) { text-decoration: underline; } &:disabled { opacity: 0.4; cursor: not-allowed; } }

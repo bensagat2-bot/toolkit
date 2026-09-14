@@ -3,25 +3,23 @@ use std::fs;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter};
 
 static CURRENT_PROCESS: Mutex<Option<u32>> = Mutex::new(None);
-static mut RESOURCE_DIR: Option<PathBuf> = None;
+static RESOURCE_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 pub fn set_resource_dir(path: PathBuf) {
-    unsafe { RESOURCE_DIR = Some(path); }
+    let _ = RESOURCE_DIR.set(path);
 }
 
 fn get_resource_dir() -> PathBuf {
-    unsafe {
-        RESOURCE_DIR.clone().unwrap_or_else(|| {
-            let exe = std::env::current_exe().unwrap_or_default();
-            exe.parent().unwrap_or(&std::path::PathBuf::from(".")).to_path_buf()
-        })
-    }
+    RESOURCE_DIR.get().cloned().unwrap_or_else(|| {
+        let exe = std::env::current_exe().unwrap_or_default();
+        exe.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."))
+    })
 }
 
 fn emit_progress(app: &AppHandle, msg: &str) {
@@ -175,7 +173,9 @@ fn run_spd_dump_stream(app: &AppHandle, exe: &Path, tokens: &[String], cwd: &Pat
         cmd.creation_flags(0x08000000);
     }
     let mut child = cmd.spawn().map_err(|e| format!("Failed to run spd_dump: {e}"))?;
-    *CURRENT_PROCESS.lock().unwrap() = Some(child.id());
+    if let Ok(mut guard) = CURRENT_PROCESS.lock() {
+        *guard = Some(child.id());
+    }
 
     let stdout = child.stdout.take().ok_or("Failed to capture spd_dump output")?;
     let reader = std::io::BufReader::new(stdout);
@@ -190,7 +190,9 @@ fn run_spd_dump_stream(app: &AppHandle, exe: &Path, tokens: &[String], cwd: &Pat
         output.push('\n');
     }
     let status = child.wait().map_err(|e| format!("spd_dump wait failed: {e}"))?;
-    *CURRENT_PROCESS.lock().unwrap() = None;
+    if let Ok(mut guard) = CURRENT_PROCESS.lock() {
+        *guard = None;
+    }
     if !status.success() {
         return Err(format!("spd_dump exited with code {:?}", status.code()));
     }
@@ -234,7 +236,10 @@ pub fn get_packages_installed() -> HashMap<String, bool> {
 }
 
 pub fn stop_process() -> bool {
-    let mut proc = CURRENT_PROCESS.lock().unwrap();
+    let mut proc = match CURRENT_PROCESS.lock() {
+        Ok(guard) => guard,
+        Err(_) => return false,
+    };
     if let Some(pid) = proc.take() {
         let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).output();
         return true;

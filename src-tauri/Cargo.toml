@@ -28,8 +28,8 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 sha2 = "0.10"
 serialport = "4"
 flate2 = "1"
-lzma-rs = "0.3"
-bzip2-rs = "0.1"
+xz2 = "0.1"
+bzip2 = "0.4"
 
 [target.'cfg(windows)'.dependencies]
 
@@ -47,6 +47,6 @@ opt-level = "s"
 strip = true
 debug = false
 
-[profile.release.package.lzma-rs]
+[profile.release.package.xz2]
 opt-level = 3
 

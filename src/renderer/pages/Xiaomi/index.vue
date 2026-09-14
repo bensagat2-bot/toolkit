@@ -12,10 +12,11 @@
             <span class="status-dot"></span>
             <span>{{ deviceStatusText }}</span>
           </div>
-          <button class="btn btn-sm" @click="detectDevice">
+          <button class="btn btn-sm" @click="detectDevice" :disabled="busy">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             Refresh
           </button>
+          <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
         </div>
 
         <div class="action-group" v-if="deviceInfo">
@@ -117,6 +118,8 @@ const romFolder = ref('')
 const romType = ref('')
 const romCommands = ref([])
 const showMiUnlock = ref(false)
+const errorMsg = ref('')
+const busy = ref(false)
 let pollTimer = null
 
 const deviceStatusText = computed(() => {
@@ -133,11 +136,20 @@ const bootloaderClass = computed(() => {
 })
 
 async function detectDevice() {
+  busy.value = true
+  errorMsg.value = ''
   try {
     const info = await sendIpcToMain('xiaomi_detect_device')
     deviceInfo.value = info
     deviceMode.value = info.mode || 'none'
-  } catch { deviceInfo.value = null; deviceMode.value = 'none' }
+  } catch (e) {
+    console.error('Device detection failed:', e)
+    errorMsg.value = 'Device detection failed. Ensure USB debugging is enabled.'
+    deviceInfo.value = null
+    deviceMode.value = 'none'
+  } finally {
+    busy.value = false
+  }
 }
 
 function rebootBootloader() {
@@ -153,7 +165,12 @@ async function browseRom() {
     const data = await sendIpcToMain('xiaomi_scan_rom', { folder: p })
     romType.value = data.rom_type || 'unknown'
     romCommands.value = data.commands || []
-  } catch { romType.value = 'unknown'; romCommands.value = [] }
+  } catch (e) {
+    console.error('ROM scan failed:', e)
+    errorMsg.value = 'Failed to scan ROM folder.'
+    romType.value = 'unknown'
+    romCommands.value = []
+  }
 }
 
 function runAdbCmd() {
@@ -185,13 +202,13 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
 
 .device-status { display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 5px 8px; border-radius: 4px; background: var(--bg-tertiary); }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #666; }
-.status-adb .status-dot { background: #4caf50; }
-.status-fastboot .status-dot { background: #2196f3; }
-.status-unauthorized .status-dot { background: #ff9800; }
+.status-adb .status-dot { background: var(--color-status-success); }
+.status-fastboot .status-dot { background: var(--color-status-info); }
+.status-unauthorized .status-dot { background: var(--color-status-warn); }
 
 .info-row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; span:first-child { color: var(--text-secondary); } }
-.text-ok { color: #4caf50; }
-.text-warn { color: #ff9800; }
+.text-ok { color: var(--color-status-success); }
+.text-warn { color: var(--color-status-warn); }
 
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border-primary); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 12px; cursor: pointer; transition: all 0.15s; white-space: nowrap; svg { width: 14px; height: 14px; flex-shrink: 0; } &:hover:not(:disabled) { border-color: var(--accent-primary); } &:disabled { opacity: 0.4; cursor: not-allowed; } &.btn-sm { padding: 3px 8px; font-size: 11px; } &.btn-primary { background: var(--accent-primary); color: #fff; border-color: var(--accent-primary); } }
 

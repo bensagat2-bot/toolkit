@@ -102,6 +102,16 @@ fn emit(app: &AppHandle, msg: &str) {
     let _ = app.emit("utils:progress", serde_json::json!({ "message": msg }));
 }
 
+/// Escapes a string for safe use inside a POSIX single-quoted shell string.
+fn sh_escape(s: &str) -> String {
+    if s.is_empty() {
+        return "''".to_string();
+    }
+    // Wrap in single quotes and replace any embedded single quote
+    // with '\'' (close quote, escaped quote, open quote).
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 fn base_cmd(program: &str) -> Command {
     let mut cmd = Command::new(program);
     #[cfg(windows)]
@@ -238,7 +248,8 @@ pub(crate) fn detect_mode() -> (String, Option<String>) {
 
 /// Detects whether a path exists on the device (via su).
 pub(crate) fn device_path_exists(serial: &str, path: &str) -> bool {
-    let out = adb_serial(serial, &["shell", "su", "-c", &format!("test -e {path} && echo YES")], 8000);
+    let safe = sh_escape(path);
+    let out = adb_serial(serial, &["shell", "su", "-c", &format!("test -e {safe} && echo YES")], 8000);
     out.contains("YES")
 }
 
@@ -253,9 +264,10 @@ pub(crate) fn dump_partition(serial: &str, src: &str, dest: &std::path::Path) ->
     };
 
     cleanup();
+    let safe_src = sh_escape(src);
     let dump = adb_serial(
         serial,
-        &["shell", "su", "-c", &format!("dd if={src} of={REMOTE} bs=1M 2>/dev/null && sync")],
+        &["shell", "su", "-c", &format!("dd if={safe_src} of={REMOTE} bs=1M 2>/dev/null && sync")],
         600000,
     );
     let listed = adb_serial(serial, &["shell", "ls", "-l", REMOTE], 10000);

@@ -161,10 +161,10 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useAccountStore } from '@renderer/store/accountStore'
+import { API_BASE } from '@renderer/config'
 import ExtractDialog from './ExtractDialog.vue'
 
 const store = useAccountStore()
-const API_BASE = 'https://firmwaresss-devices.vercel.app'
 const items = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -237,7 +237,14 @@ async function fetchFirmwares() {
     total.value = data.total || 0
     pages.value = data.pages || 1
     lastUpdated.value = new Date().toLocaleTimeString()
-  } catch { items.value = []; total.value = 0; pages.value = 1 }
+  } catch (err) {
+    console.error('Failed to fetch firmwares:', err)
+    errorMsg.value = 'Failed to load firmwares. Check your connection.'
+    showError.value = true
+    items.value = []
+    total.value = 0
+    pages.value = 1
+  }
   loading.value = false
 }
 
@@ -364,8 +371,8 @@ onBeforeUnmount(() => {
 .fw-model { font-size: 13px; font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fw-version { font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
 .fw-status { flex: none; font-size: 10px; font-weight: 500; padding: 2px 8px; border-radius: 10px; }
-.status-ok { color: #4caf50; background: rgba(76, 175, 80, 0.12); }
-.status-no { color: #f44336; background: rgba(244, 67, 54, 0.12); }
+.status-ok { color: var(--color-status-success); background: rgba(76, 175, 80, 0.12); }
+.status-no { color: var(--color-status-error); background: rgba(244, 67, 54, 0.12); }
 
 .fw-meta { display: flex; flex-flow: row wrap; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-primary); }
 .meta-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 10px; padding: 2px 8px; }

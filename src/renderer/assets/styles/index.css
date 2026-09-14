@@ -144,6 +144,13 @@ html[data-theme='dark'] {
   --border-primary: rgba(108, 170, 220, 0.16);
   --text-primary: var(--color-font);
   --text-secondary: var(--color-font-label);
+
+  /* Semantic status colors */
+  --color-status-success: #4caf50;
+  --color-status-warn: #ff9800;
+  --color-status-error: #f44336;
+  --color-status-info: #2196f3;
+  --color-white: #fff;
 }
 
 button,

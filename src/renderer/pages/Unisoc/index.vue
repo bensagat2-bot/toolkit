@@ -33,11 +33,12 @@
 
         <div class="action-group">
           <h3>Operations</h3>
-          <button class="btn btn-primary" @click="runUnlock">Unlock Bootloader</button>
-          <button class="btn btn-primary" @click="runFlash" :disabled="!folderPath || selected.length === 0">Flash Firmware</button>
-          <button class="btn" @click="runEraseFrp">Erase FRP</button>
-          <button class="btn" @click="runDump">Dump Partitions</button>
-          <button class="btn btn-danger" @click="stop">Stop</button>
+          <button class="btn btn-primary" @click="runUnlock" :disabled="busy">Unlock Bootloader</button>
+          <button class="btn btn-primary" @click="runFlash" :disabled="busy || !folderPath || selected.length === 0">Flash Firmware</button>
+          <button class="btn" @click="runEraseFrp" :disabled="busy">Erase FRP</button>
+          <button class="btn" @click="runDump" :disabled="busy">Dump Partitions</button>
+          <button class="btn btn-danger" @click="stop" :disabled="busy">Stop</button>
+          <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
         </div>
 
         <div class="action-group">
@@ -120,6 +121,8 @@ const connWait = ref(300)
 const connBaud = ref('')
 const connBlk = ref('')
 const form = reactive({})
+const errorMsg = ref('')
+const busy = ref(false)
 UNISOC_OPS.forEach((op) => { form[opIndex(op)] = reactive({}) })
 const opsGroups = OPS_GROUPS
 const folderName = computed(() => folderPath.value ? folderPath.value.split(/[/\\]/).pop() : '')
@@ -145,6 +148,7 @@ function formatSize(bytes) {
 }
 
 const browseFolder = async () => {
+  errorMsg.value = ''
   const p = await showSelectFolder('Select Firmware Folder')
   if (!p) return
   folderPath.value = p
@@ -152,7 +156,11 @@ const browseFolder = async () => {
     const data = await sendIpcToMain('unisoc_scan_folder', { path: folderPath.value })
     partitions.value = data.partitions || []
     selected.value = partitions.value.map((p) => ({ name: p.name, file: p.file }))
-  } catch { partitions.value = [] }
+  } catch (e) {
+    console.error('Scan folder failed:', e)
+    errorMsg.value = 'Failed to scan firmware folder.'
+    partitions.value = []
+  }
 }
 
 const pickFile = async (op, field) => {
@@ -178,6 +186,7 @@ function runDump() {
   router.push({ path: '/unisoc/run' })
 }
 async function runOp(op) {
+  errorMsg.value = ''
   if (op.danger) {
     const ok = await sendIpcToMain('confirm_action', { message: `Run "${op.label}"? This may erase data.` })
     if (!ok) return
@@ -185,9 +194,13 @@ async function runOp(op) {
   const values = form[opIndex(op)] || {}
   const cliOp = { name: op.name }
   for (const f of op.fields || []) {
-    if (f.type === 'file' && !values[f.key]) return alert(`${f.label} is required for ${op.label}`)
+    if (f.type === 'file' && !values[f.key]) {
+      errorMsg.value = `${f.label} is required for ${op.label}`
+      return
+    }
     cliOp[f.key] = values[f.key] || undefined
   }
+  busy.value = true
   setPending({ type: 'cli', pkg_id: selectedPkg.value, device: selectedDevice.value || null, cli: { wait_secs: connWait.value, baudrate: connBaud.value || undefined, blk_size: connBlk.value || undefined, ops: [cliOp] } })
   router.push({ path: '/unisoc/run' })
 }
@@ -208,7 +221,7 @@ onMounted(async () => { packageInstalled.value = await sendIpcToMain('get_packag
 .text-input { flex: 1; min-width: 0; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 4px; padding: 4px 8px; font-size: 12px; color: var(--text-primary); outline: none; }
 .text-input:focus { border-color: var(--accent-primary); }
 
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border-primary); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 12px; cursor: pointer; transition: all 0.15s; white-space: nowrap; &:hover:not(:disabled) { border-color: var(--accent-primary); } &:disabled { opacity: 0.4; cursor: not-allowed; } &.btn-sm { padding: 3px 8px; font-size: 11px; } &.btn-primary { background: var(--accent-primary); color: #fff; border-color: var(--accent-primary); } &.btn-danger { background: #c62828; color: #fff; border-color: #c62828; } }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border-primary); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 12px; cursor: pointer; transition: all 0.15s; white-space: nowrap; &:hover:not(:disabled) { border-color: var(--accent-primary); } &:disabled { opacity: 0.4; cursor: not-allowed; } &.btn-sm { padding: 3px 8px; font-size: 11px; } &.btn-primary { background: var(--accent-primary); color: #fff; border-color: var(--accent-primary); } &.btn-danger { background: var(--color-status-error); color: var(--color-white); border-color: var(--color-status-error); } }
 
 .output-card { flex: 1; display: flex; flex-direction: column; border: 1px solid var(--border-primary); border-radius: 6px; overflow: hidden; min-width: 0; }
 .output-card-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border-bottom: var(--color-list-header-border-bottom); span { font-size: 12px; color: var(--color-font); } .header-actions { display: flex; align-items: center; gap: 10px; } .selection-count { color: var(--accent-primary); } .btn-link { background: none; border: none; color: var(--accent-primary); font-size: 12px; cursor: pointer; padding: 0; &:hover:not(:disabled) { text-decoration: underline; } &:disabled { opacity: 0.4; cursor: not-allowed; } } }
