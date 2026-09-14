@@ -215,7 +215,7 @@ fn prepare_extensions(da: &DaEntry<'_>, chip: SoC) -> Option<Vec<u8>> {
     };
 
     let is_arm64 = matches!(da.arch(), Arch::Aarch64);
-    let mut da_ext_data = get_v6_payload(DA_EXT, is_arm64).ok_or_else(|| crate::error::Error::ParseError("Invalid DA_EXT v6 payload".into()))?.to_vec();
+    let mut da_ext_data = get_v6_payload(DA_EXT, is_arm64)?.to_vec();
 
     let reg_cmd_addr = analyzer
         .fn_from_str("CMD:REBOOT")
