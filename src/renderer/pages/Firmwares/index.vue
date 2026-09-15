@@ -77,7 +77,7 @@
           <!-- Header -->
           <div class="modal-header">
             <h3>{{ selectedItem.device_name || selectedItem.project }}</h3>
-            <button class="modal-close" @click="selectedItem = null">&times;</button>
+            <button class="modal-close" @click="closeModal">&times;</button>
           </div>
 
           <div class="modal-body">
@@ -232,7 +232,7 @@
                 <button class="btn btn-primary" @click="startExtract" :disabled="!extractCanStart">
                   {{ extractButtonLabel }}
                 </button>
-                <button class="btn" @click="selectedItem = null">Close</button>
+                <button class="btn" @click="closeModal" :disabled="extractExtracting">Close</button>
               </div>
             </template>
 
@@ -333,6 +333,11 @@ function frboxUrl(link, pwd) {
 
 function handleOverlayClick() {
   if (viewMode.value === 'extract' && extractExtracting.value) return
+  selectedItem.value = null
+}
+
+function closeModal() {
+  if (extractExtracting.value) return
   selectedItem.value = null
 }
 
@@ -521,6 +526,17 @@ function openDetail(item) {
   revealedCode.value = ''
   errorMsg.value = ''
   showError.value = false
+  viewMode.value = 'info'
+  extractLoading.value = false
+  extractPartitions.value = []
+  extractError.value = ''
+  extractSelected.value = []
+  extractOutputDir.value = ''
+  extractDone.value = ''
+  extractTgzName.value = 'init_boot'
+  extractExtracting.value = false
+  extractProgress.value = 0
+  extractProgressText.value = ''
 }
 
 function startPurchase() {
