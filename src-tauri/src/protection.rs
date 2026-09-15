@@ -90,8 +90,7 @@ mod win {
     fn check_peb_flag() -> bool {
         #[cfg(target_arch = "x86_64")]
         unsafe {
-            let mut peb: *mut std::ffi::c_void;
-            std::arch::asm!("mov {}, gs:0x60", out(reg) peb, options(nostack, att_syntax));
+            let peb = std::arch::x86_64::__readgsqword(0x60) as *mut std::ffi::c_void;
             let flag = *(peb.add(0x2) as *const u8);
             flag & 1 != 0
         }
