@@ -637,7 +637,7 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
         }
         _ => {
             emit(&app, KERNELSU_NEXT_BANNER.trim_end());
-            ("https://api.github.com/repos/KernelSU-Next/KernelSU-Next/releases/latest", "KernelSU-Next", "KernelSU.apk", "universal")
+            ("https://api.github.com/repos/KernelSU-Next/KernelSU-Next/releases/latest", "KernelSU-Next", "KernelSU_Next", "spoofed")
         }
     };
     emit(&app, "Checking ADB Connection...");
