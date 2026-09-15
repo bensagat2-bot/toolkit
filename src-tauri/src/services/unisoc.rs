@@ -28,6 +28,7 @@ fn emit_progress(app: &AppHandle, msg: &str) {
 
 #[derive(Debug, Clone)]
 pub struct UnisocPackage {
+    #[allow(dead_code)]
     pub id: String,
     pub name: String,
     pub exec_addr: u64,

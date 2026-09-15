@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::sync::OnceLock;
 
 // Matches src-tauri/encrypt_resources.py: V 1 P e r S e r v I c e
 const KEY: [u8; 12] = [0x56, 0x31, 0x50, 0x45, 0x72, 0x53, 0x65, 0x72, 0x76, 0x49, 0x63, 0x65];
@@ -8,12 +7,6 @@ static PLATFORM_TOOLS_ENC: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/platform-tools.enc"));
 static SCRCPY_ENC: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/scrcpy.enc"));
 static UNISOC_ENC: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/unisoc.enc"));
-
-static RESOURCE_DIR: OnceLock<PathBuf> = OnceLock::new();
-
-pub fn set_resource_dir(path: PathBuf) {
-    let _ = RESOURCE_DIR.set(path);
-}
 
 fn decrypt(data: &[u8]) -> Vec<u8> {
     data.iter()

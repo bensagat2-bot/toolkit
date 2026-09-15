@@ -598,7 +598,6 @@ pub fn driver_download(app: AppHandle, name: String, url: String) -> Result<bool
 
 // ── Root ─────────────────────────────────────────────────────
 
-const ROOT_BANNER: &str = include_str!("../../banner.txt");
 const FOLKPATCH_BANNER: &str = include_str!("../../banner-folkpatch.txt");
 const KERNELSU_BANNER: &str = include_str!("../../banner-kernelsu.txt");
 const KERNELSU_NEXT_BANNER: &str = include_str!("../../banner-kernelsu-next.txt");
@@ -1298,6 +1297,7 @@ pub fn force_fastboot(app: AppHandle) -> Result<bool, String> {
 
 enum AttemptResult {
     Success,
+    #[allow(dead_code)]
     OpenError(String),
     NoAck,
     Disconnected,

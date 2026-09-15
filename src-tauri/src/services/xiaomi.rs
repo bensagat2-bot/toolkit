@@ -208,11 +208,6 @@ pub fn fastboot_oem_unlock() -> Result<String, String> {
     Ok(out)
 }
 
-pub fn fastboot_reboot() -> Result<String, String> {
-    let out = fastboot(&["reboot"], 30000);
-    Ok(out)
-}
-
 pub fn adb_reboot_bootloader(serial: &str) -> Result<String, String> {
     let out = adb(&["-s", serial, "reboot", "bootloader"], 30000);
     Ok(out)
@@ -236,16 +231,6 @@ pub fn reboot_to_bootloader() -> Result<String, String> {
         return Err("No ADB device found. Enable USB debugging and connect.".into());
     }
     adb_reboot_bootloader(&serial)
-}
-
-pub fn check_fastboot() -> bool {
-    let out = fastboot(&["--version"], 5000);
-    !out.trim().is_empty() && !out.contains("not found")
-}
-
-pub fn check_adb() -> bool {
-    let out = adb(&["version"], 5000);
-    !out.trim().is_empty() && !out.contains("not found")
 }
 
 pub fn run_fastboot_cmd(args: Vec<String>) -> String {

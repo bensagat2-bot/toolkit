@@ -27,27 +27,7 @@ fn hmac_sha1_base64(key: &str, data: &str) -> String {
     base64::engine::general_purpose::STANDARD.encode(result)
 }
 
-fn xiaomi_sign(data: &serde_json::Value, ssecurity: &str, nonce: &str) -> HashMap<String, String> {
-    let r = rand_str(16);
-    let data_str = serde_json::to_string(data).unwrap_or_default();
-    let mut params = vec![
-        ("data".to_string(), data_str),
-        ("r".to_string(), r.clone()),
-        ("nonce".to_string(), nonce.to_string()),
-    ];
-    params.sort_by(|a, b| a.0.cmp(&b.0));
-    let qs: String = params
-        .iter()
-        .map(|(k, v)| format!("{}={}", k, url_encode(v)))
-        .collect::<Vec<_>>()
-        .join("&");
-    let sign = hmac_sha1_base64(ssecurity, &qs);
-    let mut result: HashMap<String, String> = params.into_iter().collect();
-    result.insert("sign".to_string(), sign);
-    result
 }
-
-fn url_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {
@@ -69,9 +49,11 @@ pub struct LoginResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
-    pub userId: String,
+    #[serde(rename = "userId")]
+    pub user_id: String,
     pub ssecurity: String,
-    pub deviceId: String,
+    #[serde(rename = "deviceId")]
+    pub device_id: String,
     pub cookies: HashMap<String, String>,
     pub service_token: String,
 }
@@ -89,14 +71,9 @@ pub struct NonceResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClearInfo {
-    pub cleanOrNot: Option<i64>,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnlockResult {
-    pub encryptData: String,
+    #[serde(rename = "encryptData")]
+    pub encrypt_data: String,
     pub code: i64,
     pub description: Option<String>,
 }
@@ -350,9 +327,9 @@ pub fn create_session(auth_code: &str) -> Result<SessionInfo, String> {
         .to_string();
 
     Ok(SessionInfo {
-        userId: user_id,
+        user_id: user_id,
         ssecurity,
-        deviceId: device_id,
+        device_id: device_id,
         cookies,
         service_token: pass_token.to_string(),
     })
@@ -430,39 +407,6 @@ pub fn get_nonce(
     Ok(NonceResult { nonce })
 }
 
-pub fn get_clear_info(
-    domain: &str,
-    ssecurity: &str,
-    cookies: &HashMap<String, String>,
-    nonce: &str,
-    product: &str,
-) -> Result<ClearInfo, String> {
-    let data = serde_json::json!({
-        "appId": "1",
-        "data": {
-            "product": product,
-        },
-        "nonce": nonce,
-    });
-    let resp = xiaomi_send(
-        "/api/v2/unlock/device/clear",
-        &data,
-        domain,
-        ssecurity,
-        cookies,
-    )?;
-    let clean_or_not = resp.get("data").and_then(|d| d.get("cleanOrNot")).and_then(|v| v.as_i64());
-    let description = resp
-        .get("data")
-        .and_then(|d| d.get("description"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    Ok(ClearInfo {
-        cleanOrNot: clean_or_not,
-        description,
-    })
-}
-
 pub fn get_device_token() -> Result<String, String> {
     let path = utils::fastboot_path();
     let out = utils::run_cmd(&path, &["oem", "get_token"], 15000);
@@ -503,9 +447,9 @@ pub fn perform_unlock(
         "deviceToken": device_token,
         "language": "en",
         "operate": "unlock",
-        "pcId": md5_hash(&session.deviceId),
+        "pcId": md5_hash(&session.device_id),
         "region": region.region,
-        "uid": session.userId,
+        "uid": session.user_id,
     });
 
     let req_data = serde_json::json!({
@@ -535,7 +479,7 @@ pub fn perform_unlock(
     apply_unlock(&encrypt_data)?;
 
     Ok(UnlockResult {
-        encryptData: encrypt_data.clone(),
+        encrypt_data: encrypt_data.clone(),
         code: 0,
         description: None,
     })

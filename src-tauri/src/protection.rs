@@ -3,6 +3,7 @@ use std::sync::Once;
 static INIT: Once = Once::new();
 
 #[cfg(target_os = "windows")]
+#[allow(dead_code)]
 mod win {
     use std::time::{Duration, Instant};
 
@@ -142,11 +143,11 @@ mod win {
         #[cfg(target_arch = "x86_64")]
         unsafe {
             let start: u64;
-            std::arch::asm!("rdtsc", "mov {}, eax", out(reg) start, options(nostack, att_syntax));
+            std::arch::asm!("rdtsc", "mov {}, eax", out(reg) start, options(nostack));
             let mut dummy = 0u64;
             for _ in 0..1000 { dummy ^= i64::MAX as u64; }
             let end: u64;
-            std::arch::asm!("rdtsc", "mov {}, eax", out(reg) end, options(nostack, att_syntax));
+            std::arch::asm!("rdtsc", "mov {}, eax", out(reg) end, options(nostack));
             std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
             let _ = dummy;
             (end - start) > 50000
