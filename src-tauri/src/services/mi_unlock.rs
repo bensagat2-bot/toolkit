@@ -3,11 +3,11 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 
 use base64::Engine;
-use digest::{Digest, KeyInit};
 use hmac::Mac;
 use md5::Md5;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use sha2::digest::{Digest, KeyInit};
 
 use crate::services::utils;
 
