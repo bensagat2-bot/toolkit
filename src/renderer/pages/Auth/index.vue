@@ -26,6 +26,12 @@
           <button class="btn btn-primary" type="submit">
             {{ isLogin ? 'Sign In' : 'Create Account' }}
           </button>
+
+          <div v-if="!isLogin" class="password-hints">
+            <span :class="{ met: password.length >= 6 }">6+ characters</span>
+            <span :class="{ met: /[A-Z]/.test(password) }">1 uppercase</span>
+            <span :class="{ met: /[^a-zA-Z0-9]/.test(password) }">1 special char</span>
+          </div>
         </form>
 
         <button class="link-btn" @click="toggleMode">
@@ -94,6 +100,14 @@ async function submit() {
     error.value = 'Password must be at least 6 characters.'
     return
   }
+  if (!/[A-Z]/.test(password.value)) {
+    error.value = 'Password must contain at least one uppercase letter.'
+    return
+  }
+  if (!/[^a-zA-Z0-9]/.test(password.value)) {
+    error.value = 'Password must contain at least one special character (!@#$%^&* etc.).'
+    return
+  }
   if (password.value !== confirm.value) {
     error.value = 'Passwords do not match.'
     return
@@ -130,6 +144,9 @@ async function submit() {
 .link-btn { background: none; border: none; font-size: 12px; color: var(--accent-primary); cursor: pointer; padding: 4px; }
 .link-btn:hover { text-decoration: underline; }
 .error-msg { font-size: 12px; color: #f44336; }
+.password-hints { display: flex; gap: 12px; justify-content: center; font-size: 11px; color: var(--text-secondary); }
+.password-hints span { opacity: 0.5; transition: opacity 0.2s; }
+.password-hints span.met { opacity: 1; color: #4caf50; }
 .auth-foot { font-size: 11px; color: var(--text-secondary); opacity: 0.8; margin: 6px 0 0; }
 
 .loading-wrap { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%); }

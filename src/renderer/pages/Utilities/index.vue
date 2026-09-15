@@ -15,6 +15,8 @@
             <span class="select-label">Root Manager</span>
             <select v-model="rootManager" class="text-input select-input">
               <option value="ksu-next">KernelSU-Next</option>
+              <option value="ksu">KernelSU</option>
+              <option value="sukisu">SukiSU-Ultra</option>
               <option value="folkpatch">FolkPatch</option>
             </select>
           </label>

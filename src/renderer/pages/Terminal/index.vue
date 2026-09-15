@@ -9,7 +9,7 @@
           <button class="btn-link" @click="copyLog" :disabled="busy">Copy</button>
         </div>
       </div>
-      <div class="term-body" ref="bodyRef" @mousedown="focusInput" @dragover.prevent="onDragOver" @dragleave.prevent="onDragLeave" :class="{ 'drag-over': dragOver }">
+      <div class="term-body" ref="bodyRef" @drop.prevent="onHtmlDrop" @dragover.prevent="onDragOver" @dragleave.prevent="onDragLeave" :class="{ 'drag-over': dragOver }">
         <div v-for="(line, i) in lines" :key="i" :class="['term-line', line.kind]">
           <template v-if="line.kind === 'cmd'">
             <span class="prompt">$ v1per&gt;</span>
@@ -50,6 +50,7 @@ const busy = ref(false)
 const history = ref([])
 const historyIndex = ref(-1)
 const dragOver = ref(false)
+const deviceMode = ref('') // '', 'adb', or 'fastboot'
 let unlistenDragDrop = null
 
 const deviceLabel = computed(() => {
@@ -113,6 +114,15 @@ function onDropPaths(paths) {
   focusInput()
 }
 
+function onHtmlDrop(e) {
+  dragOver.value = false
+  const files = e.dataTransfer?.files
+  if (files?.length) {
+    const paths = Array.from(files).map((f) => f.path)
+    onDropPaths(paths)
+  }
+}
+
 function onDragOver() {
   dragOver.value = true
 }
@@ -122,8 +132,21 @@ function onDragLeave() {
 }
 
 async function runCommand() {
-  const cmd = current.value.trim()
+  let cmd = current.value.trim()
   if (!cmd || busy.value) return
+
+  // Auto-prepend adb/fastboot when device mode is known and command is not
+  // already prefixed and doesn't start with a known tool keyword.
+  const knownTools = ['adb', 'fastboot', 'scrcpy', 'clear', 'cd', 'dir', 'echo', 'help', 'exit']
+  const first = cmd.split(/\s+/)[0].toLowerCase()
+  if (deviceMode.value && !knownTools.includes(first)) {
+    if (deviceMode.value === 'fastboot') {
+      cmd = `fastboot ${cmd}`
+    } else if (deviceMode.value === 'adb') {
+      cmd = `adb ${cmd}`
+    }
+  }
+
   history.value.push(cmd)
   historyIndex.value = -1
   push('cmd', cmd)
@@ -168,11 +191,26 @@ onMounted(async () => {
     }
   })
   focusInput()
-})
 
-onBeforeUnmount(() => {
-  if (typeof unlistenDragDrop === 'function') unlistenDragDrop()
-  lines.value = []
+  // Detect device mode on mount and poll every 3s
+  const pollDevice = async () => {
+    try {
+      const info = await sendIpcToMain('xiaomi_detect_device')
+      if (info?.mode && info.mode !== 'none') {
+        deviceMode.value = info.mode
+      }
+    } catch {
+      // device detection not critical
+    }
+  }
+  await pollDevice()
+  const pollTimer = setInterval(pollDevice, 3000)
+  onBeforeUnmount(() => {
+    if (typeof unlistenDragDrop === 'function') unlistenDragDrop()
+    clearInterval(pollTimer)
+    lines.value = []
+  })
+  return // prevent the old onBeforeUnmount from overwriting
 })
 </script>
 

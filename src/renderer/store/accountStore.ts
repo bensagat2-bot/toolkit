@@ -27,6 +27,8 @@ interface UserPayload {
 }
 
 const STORAGE_KEY = 'v1per_account'
+const HWID_CACHE_KEY = 'v1per_hwid_cache'
+const PCINFO_CACHE_KEY = 'v1per_pcinfo_cache'
 const API_BASE = 'https://firmwaresss-devices.vercel.app'
 
 interface PcInfo {
@@ -38,6 +40,40 @@ interface PcInfo {
   os_version: string
   ram: string
   device_model: string
+}
+
+// Cache HWID and PC info in localStorage so login/register don't
+// block on PowerShell WMI queries every time.
+function getCachedHwid(): string | null {
+  try { return localStorage.getItem(HWID_CACHE_KEY) } catch { return null }
+}
+function setCachedHwid(hwid: string) {
+  try { localStorage.setItem(HWID_CACHE_KEY, hwid) } catch { /* ignore */ }
+}
+function getCachedPcInfo(): PcInfo | null {
+  try {
+    const raw = localStorage.getItem(PCINFO_CACHE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+function setCachedPcInfo(info: PcInfo) {
+  try { localStorage.setItem(PCINFO_CACHE_KEY, JSON.stringify(info)) } catch { /* ignore */ }
+}
+
+async function getHwidCached(): Promise<string> {
+  const cached = getCachedHwid()
+  if (cached) return cached
+  const hwid = await sendIpcToMain<string>('get_hwid')
+  setCachedHwid(hwid)
+  return hwid
+}
+
+async function getPcInfoCached(): Promise<PcInfo> {
+  const cached = getCachedPcInfo()
+  if (cached) return cached
+  const info = await sendIpcToMain<PcInfo>('get_pc_info')
+  setCachedPcInfo(info)
+  return info
 }
 
 function loadSaved(): AccountInfo | null {
@@ -69,6 +105,7 @@ export const useAccountStore = defineStore('account', () => {
   const account = ref<AccountInfo | null>(loadSaved())
   const initialized = ref(false)
   const banned = ref<string | null>(null)
+  const deleted = ref<string | null>(null)
 
   const isAuthed = ref(!!account.value)
 
@@ -90,6 +127,15 @@ export const useAccountStore = defineStore('account', () => {
       if (account.value.token) {
         const res = await fetch(`${API_BASE}/api/auth/me?token=${encodeURIComponent(account.value.token)}&_=${++nonce}`)
         if (res.status === 401) {
+          // Token invalid - check if account was deleted or just session revoked
+          try {
+            const statusRes = await fetch(`${API_BASE}/api/auth/status?hwid=${encodeURIComponent(account.value.hwid)}&_=${++nonce}`)
+            const statusData = await statusRes.json()
+            if (statusData?.registered === false) {
+              deleted.value = 'Your account has been deleted by an administrator.'
+              return
+            }
+          } catch { /* offline fall through to normal logout */ }
           account.value.token = undefined
           persist()
           isAuthed.value = false
@@ -108,6 +154,10 @@ export const useAccountStore = defineStore('account', () => {
       const res = await fetch(`${API_BASE}/api/auth/status?hwid=${encodeURIComponent(account.value.hwid)}&_=${++nonce}`)
       if (!res.ok) return
       const data = await res.json()
+      if (data?.registered === false && account.value) {
+        deleted.value = 'Your account has been deleted by an administrator.'
+        return
+      }
       if (data?.status === 'banned') banned.value = 'Your account has been banned.'
       else if (data?.status === 'suspended') banned.value = 'Your account has been suspended.'
       else banned.value = null
@@ -123,11 +173,14 @@ export const useAccountStore = defineStore('account', () => {
       return
     }
     initialized.value = true
+    // Pre-cache HWID and PC info so login/register don't block on PowerShell
+    getHwidCached().catch(() => {})
+    getPcInfoCached().catch(() => {})
   }
 
   async function register(username: string, email: string, password: string) {
-    const hwid = await sendIpcToMain<string>('get_hwid')
-    const pcInfo = await sendIpcToMain<PcInfo>('get_pc_info')
+    const hwid = await getHwidCached()
+    const pcInfo = await getPcInfoCached()
     const res = await fetch(`${API_BASE}/api/users`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -165,8 +218,8 @@ export const useAccountStore = defineStore('account', () => {
   }
 
   async function login(password: string) {
-    const hwid = await sendIpcToMain<string>('get_hwid')
-    const pcInfo = await sendIpcToMain<PcInfo>('get_pc_info')
+    const hwid = await getHwidCached()
+    const pcInfo = await getPcInfoCached()
     const res = await fetch(`${API_BASE}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -206,6 +259,7 @@ export const useAccountStore = defineStore('account', () => {
   function logout() {
     account.value = null
     banned.value = null
+    deleted.value = null
     isAuthed.value = false
     persist()
   }
@@ -240,5 +294,5 @@ export const useAccountStore = defineStore('account', () => {
     return { link: data?.link as string, extraction_code: (data?.extraction_code as string | null | undefined) ?? null }
   }
 
-  return { account, isAuthed, initialized, banned, init, checkStatus, register, login, logout, purchase }
+  return { account, isAuthed, initialized, banned, deleted, init, checkStatus, register, login, logout, purchase }
 })

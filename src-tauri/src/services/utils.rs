@@ -600,6 +600,9 @@ pub fn driver_download(app: AppHandle, name: String, url: String) -> Result<bool
 
 const ROOT_BANNER: &str = include_str!("../../banner.txt");
 const FOLKPATCH_BANNER: &str = include_str!("../../banner-folkpatch.txt");
+const KERNELSU_BANNER: &str = include_str!("../../banner-kernelsu.txt");
+const KERNELSU_NEXT_BANNER: &str = include_str!("../../banner-kernelsu-next.txt");
+const SUKISU_BANNER: &str = include_str!("../../banner-sukisu.txt");
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RootOptions {
@@ -607,9 +610,9 @@ pub struct RootOptions {
     pub manager: Option<String>,
 }
 
-/// Runs the KernelSU-Next / FolkPatch root pipeline using the manager selected
-/// in the UI dropdown. The chosen manager's ASCII banner is printed first so
-/// the user knows which root manager will be installed.
+/// Runs the KernelSU-Next / KernelSU / SukiSU-Ultra / FolkPatch root pipeline
+/// using the manager selected in the UI dropdown. The chosen manager's ASCII
+/// banner is printed first so the user knows which root manager will be installed.
 pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     let started = std::time::Instant::now();
     let boot_img = Path::new(&opts.boot_img);
@@ -618,8 +621,26 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     }
 
     // Manager chosen by the user in the dropdown; defaults to KernelSU-Next.
-    let use_folk = opts.manager.as_deref() == Some("folkpatch");
-    emit(&app, if use_folk { FOLKPATCH_BANNER.trim_end() } else { ROOT_BANNER.trim_end() });
+    let mgr = opts.manager.as_deref().unwrap_or("ksu-next");
+    let (release_url, manager_label, apk_label, prefer) = match mgr {
+        "folkpatch" => {
+            emit(&app, FOLKPATCH_BANNER.trim_end());
+            ("https://api.github.com/repos/LyraVoid/FolkPatch/releases/latest", "FolkPatch", "FolkPatch.apk", "folkpatch")
+        }
+        "ksu" => {
+            emit(&app, KERNELSU_BANNER.trim_end());
+            ("https://api.github.com/repos/tiann/KernelSU/releases/latest", "KernelSU", "KernelSU_v", "release")
+        }
+        "sukisu" => {
+            emit(&app, SUKISU_BANNER.trim_end());
+            ("https://api.github.com/repos/SukiSU-Ultra/SukiSU-Ultra/releases/latest", "SukiSU-Ultra", "SukiSU_v", "release")
+        }
+        _ => {
+            emit(&app, KERNELSU_NEXT_BANNER.trim_end());
+            ("https://api.github.com/repos/KernelSU-Next/KernelSU-Next/releases/latest", "KernelSU-Next", "KernelSU.apk", "universal")
+        }
+    };
+    let use_folk = mgr == "folkpatch";
 
     emit(&app, "Checking ADB Connection...");
     let serial = match ready_adb_device() {
@@ -660,14 +681,6 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     emit(&app, format!("ro.build.version.sdk : {}", sdk).as_str());
     emit(&app, format!("ro.build.version.release : {}", release).as_str());
     emit(&app, format!("ro.board.platform : {}", platform).as_str());
-
-    let (release_url, manager_label, apk_label, prefer): (&str, &str, &str, &str) = if use_folk {
-        emit(&app, "Fetching releases info for FolkPatch... DONE");
-        ("https://api.github.com/repos/LyraVoid/FolkPatch/releases/latest", "FolkPatch", "FolkPatch.apk", "folkpatch")
-    } else {
-        emit(&app, "Fetching releases info for ksu... DONE");
-        ("https://api.github.com/repos/KernelSU-Next/KernelSU-Next/releases/latest", "KernelSU-Next", "KernelSU.apk", "universal")
-    };
 
     let release = fetch_json(release_url).ok_or("Failed to fetch release. Check internet.")?;
     let apk = pick_apk(&release, &[prefer]).ok_or("Failed to fetch release asset.")?;

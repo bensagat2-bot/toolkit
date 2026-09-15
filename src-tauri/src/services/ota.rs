@@ -973,6 +973,70 @@ pub struct FastbootImageInfo {
     pub size_bytes: u64,
 }
 
+/// Check if a remote file starts with gzip magic bytes (0x1F 0x8B).
+fn check_is_gzip(c: &Client, url: &str) -> bool {
+    let head = fetch_range(c, url, 0, 1).ok();
+    matches!(head, Some(b) if b.len() >= 2 && b[0] == 0x1F && b[1] == 0x8B)
+}
+
+/// List .img entries from a remote tgz by streaming and parsing tar headers.
+fn list_tgz_images_inner(c: &Client, url: &str) -> Result<Vec<FastbootImageInfo>, String> {
+    let resp = c
+        .get(url)
+        .send()
+        .map_err(|e| format!("tgz download failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("tgz download failed: HTTP {}", resp.status()));
+    }
+    let mut dec = flate2::read::GzDecoder::new(resp);
+    let mut entries = Vec::new();
+    'outer: loop {
+        let mut header = [0u8; 512];
+        let mut done = 0usize;
+        while done < header.len() {
+            let n = dec.read(&mut header[done..]).map_err(|e| format!("read error: {e}"))?;
+            if n == 0 { break 'outer; }
+            done += n;
+        }
+        if done < 512 { break; }
+        let h_name = header[0..100]
+            .split(|&x| x == 0).next()
+            .unwrap_or(&header[0..100]);
+        let h_name = String::from_utf8_lossy(h_name).to_string();
+        let size = tar_parse_int(&header[124..136]);
+        let typeflag = header[156];
+        let padded = (size + 511) / 512 * 512;
+
+        if typeflag != b'0' && typeflag != 0 {
+            skip_bytes_io(&mut dec, padded)?;
+            continue;
+        }
+        if h_name.to_lowercase().ends_with(".img") {
+            let stem = h_name.rsplit('/').next().unwrap_or(&h_name)
+                .trim_end_matches(".img").to_string();
+            entries.push(FastbootImageInfo { name: stem, size_bytes: size });
+        }
+        skip_bytes_io(&mut dec, padded)?;
+    }
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(entries)
+}
+
+fn skip_bytes_io(r: &mut impl std::io::Read, mut n: u64) -> Result<(), String> {
+    let mut skip = vec![0u8; 1 << 16];
+    while n > 0 {
+        let step = n.min(skip.len() as u64) as usize;
+        let mut done = 0usize;
+        while done < step {
+            let read = r.read(&mut skip[done..step]).map_err(|e| e.to_string())?;
+            if read == 0 { return Err("unexpected end of archive".to_string()); }
+            done += read;
+        }
+        n -= done as u64;
+    }
+    Ok(())
+}
+
 fn list_remote_zip_images(c: &Client, url: &str) -> Result<Vec<FastbootImageInfo>, String> {
     let resp = c.get(url).header("Range", "bytes=0-0").send().map_err(|e| format!("head failed: {e}"))?;
     let total = resp.headers().get("content-range")
@@ -1044,17 +1108,52 @@ fn list_remote_zip_images(c: &Client, url: &str) -> Result<Vec<FastbootImageInfo
     Ok(entries)
 }
 
-/// Lists all .img files in a remote fastboot .zip.
+/// Lists all .img files in a remote fastboot .zip (or .tgz).
 pub fn list_fastboot_images(url: &str) -> Result<Vec<FastbootImageInfo>, String> {
     let c = client();
-    list_remote_zip_images(&c, url)
+    // If the remote file is actually a gzip (tgz), list via tgz parser
+    if check_is_gzip(&c, url) {
+        return list_tgz_images_inner(&c, url);
+    }
+    // Try zip first; if EOCD is missing, fall back to tgz listing
+    match list_remote_zip_images(&c, url) {
+        Ok(entries) => Ok(entries),
+        Err(e) if e.contains("EOCD") || e.contains("ZIP64") => {
+            if check_is_gzip(&c, url) {
+                list_tgz_images_inner(&c, url)
+            } else {
+                Err(e)
+            }
+        }
+        Err(e) => Err(e),
+    }
 }
 
-/// Extracts a single .img from a remote fastboot .zip using range requests.
+/// Extracts a single .img from a remote fastboot .zip (or .tgz) using range requests.
 pub fn extract_fastboot_image(url: &str, image_name: &str, output_path: &str) -> Result<String, String> {
     let name = if image_name.ends_with(".img") { image_name.to_string() } else { format!("{image_name}.img") };
     let c = client();
 
+    // Try tgz first if the file is gzip content
+    if check_is_gzip(&c, url) {
+        return extract_from_tgz(url, &name, output_path);
+    }
+
+    // Try zip extraction with fallback to tgz on EOCD errors
+    match extract_fastboot_image_zip(&c, url, &name, output_path) {
+        Ok(result) => Ok(result),
+        Err(e) if e.contains("EOCD") || e.contains("ZIP64") => {
+            if check_is_gzip(&c, url) {
+                extract_from_tgz(url, &name, output_path)
+            } else {
+                Err(e)
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn extract_fastboot_image_zip(c: &Client, url: &str, name: &str, output_path: &str) -> Result<String, String> {
     let resp = c.get(url).header("Range", "bytes=0-0").send().map_err(|e| format!("head failed: {e}"))?;
     let total = resp.headers().get("content-range")
         .and_then(|v| v.to_str().ok()).and_then(|v| v.rsplit('/').next())

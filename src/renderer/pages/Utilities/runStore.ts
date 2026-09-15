@@ -2,7 +2,7 @@ import { ref } from 'vue'
 
 export type UtilsJobType = 'root' | 'anykernel' | 'force_fastboot' | 'scrcpy'
 
-export type RootManager = 'ksu-next' | 'folkpatch'
+export type RootManager = 'ksu-next' | 'folkpatch' | 'ksu' | 'sukisu'
 
 export interface UtilsJob {
   type: UtilsJobType

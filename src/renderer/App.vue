@@ -1,6 +1,7 @@
 <template>
   <Splash v-if="!store.initialized" />
   <Banned v-else-if="store.banned" :message="store.banned" />
+  <Deleted v-else-if="store.deleted" :message="store.deleted" />
   <AuthPage v-else-if="!store.isAuthed" />
   <div v-else id="container">
     <Aside id="left" />
@@ -26,6 +27,7 @@ import Toolbar from '@/components/layout/Toolbar.vue'
 import PlayBar from '@/components/layout/PlayBar.vue'
 import AuthPage from '@/pages/Auth/index.vue'
 import Banned from '@/pages/Auth/Banned.vue'
+import Deleted from '@/pages/Auth/Deleted.vue'
 import { useAccountStore } from '@/store/accountStore'
 import { sendIpcToMain } from '@/utils/ipc'
 
