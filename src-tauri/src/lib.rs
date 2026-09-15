@@ -117,7 +117,6 @@ pub fn run() {
             commands::open_path,
             commands::driver_download,
             commands::utils_root,
-            commands::utils_anykernel,
             commands::utils_force_fastboot,
             commands::utils_scrcpy,
             commands::term_run,

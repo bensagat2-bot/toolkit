@@ -43,7 +43,6 @@ const jobLabel = computed(() => {
   if (!pending.value) return ''
   const labels = {
     root: 'Root',
-    anykernel: 'AnyKernel',
     force_fastboot: 'Force Fastboot',
     scrcpy: 'Scrcpy',
   }
@@ -74,8 +73,6 @@ async function runJob() {
     const job = pending.value
     if (job.type === 'root') {
       await sendIpcWithTimeout('utils_root', { opts: { boot_img: job.boot_img, manager: job.manager } }, 120000)
-    } else if (job.type === 'anykernel') {
-      await sendIpcWithTimeout('utils_anykernel', { opts: { zip: job.zip } }, 120000)
     } else if (job.type === 'force_fastboot') {
       await sendIpcWithTimeout('utils_force_fastboot', {}, 60000)
     } else if (job.type === 'scrcpy') {

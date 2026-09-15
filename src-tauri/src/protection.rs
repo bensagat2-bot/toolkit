@@ -24,6 +24,10 @@ mod win {
         ) -> i32;
         fn GetModuleHandleA(lp_module_name: *const u8) -> *mut std::ffi::c_void;
         fn GetProcAddress(h_module: *mut std::ffi::c_void, lp_proc_name: *const u8) -> *const ();
+        fn GetThreadContext(h_thread: *mut std::ffi::c_void, context: *mut std::ffi::c_void) -> i32;
+        fn OpenThread(dw_desired_access: u32, inherit_handle: bool, thread_id: u32) -> *mut std::ffi::c_void;
+        fn CloseHandle(h_object: *mut std::ffi::c_void) -> i32;
+        fn NtCloseHandle(h: *mut std::ffi::c_void) -> i32;
     }
 
     type NtQueryInfoProc = unsafe extern "system" fn(
@@ -33,6 +37,9 @@ mod win {
         *mut std::ffi::c_void, u32, *mut std::ffi::c_void, u32,
     ) -> i32;
     type NtDelayExec = unsafe extern "system" fn(bool, *mut i64) -> i32;
+    type NtQueryInfoThread = unsafe extern "system" fn(
+        *mut std::ffi::c_void, u32, *mut std::ffi::c_void, u32, *mut u32,
+    ) -> i32;
 
     fn resolve_ntdll(func: &str) -> Option<*const ()> {
         unsafe {
@@ -40,7 +47,7 @@ mod win {
             let mod_h = GetModuleHandleA(ntdll.as_ptr());
             if mod_h.is_null() { return None; }
             let cname = std::ffi::CString::new(func).ok()?;
-            let ptr = GetProcAddress(mod_h, cname.as_ptr());
+            let ptr = GetProcAddress(mod_h, cname.as_ptr() as *const u8);
             if ptr.is_null() { None } else { Some(ptr) }
         }
     }
@@ -66,6 +73,50 @@ mod win {
                 std::mem::size_of::<*mut std::ffi::c_void>() as u32, &mut ret_len)
         };
         status == 0 && !handle.is_null()
+    }
+
+    fn check_debug_flags() -> bool {
+        let Some(ptr) = resolve_ntdll("NtQueryInformationProcess") else { return false };
+        let func: NtQueryInfoProc = unsafe { std::mem::transmute(ptr) };
+        let mut flags: i32 = 1;
+        let mut ret_len: u32 = 0;
+        let status = unsafe {
+            func(GetCurrentProcess(), 0x1F, &mut flags as *mut _ as *mut _,
+                4, &mut ret_len)
+        };
+        status == 0 && flags == 0
+    }
+
+    fn check_peb_flag() -> bool {
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            let mut peb: *mut std::ffi::c_void;
+            std::arch::asm!("mov {}, gs:[0x60]", out(reg) peb, options(nostack, att_syntax));
+            let flag = *(peb.add(0x2) as *const u8);
+            flag & 1 != 0
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        { false }
+    }
+
+    fn check_hw_breakpoints() -> bool {
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            let thread = GetCurrentThread();
+            let mut ctx: [u8; 0x300] = std::mem::zeroed();
+            let ctx_ptr = ctx.as_mut_ptr();
+            *(ctx_ptr as *mut u32) = 0x300;
+            if GetThreadContext(thread, ctx_ptr as *mut _) == 0 {
+                return false;
+            }
+            let dr0: usize = *(ctx_ptr.add(0x80) as *const usize);
+            let dr1: usize = *(ctx_ptr.add(0x88) as *const usize);
+            let dr2: usize = *(ctx_ptr.add(0x90) as *const usize);
+            let dr3: usize = *(ctx_ptr.add(0x98) as *const usize);
+            dr0 != 0 || dr1 != 0 || dr2 != 0 || dr3 != 0
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        { false }
     }
 
     fn hide_from_debugger() {
@@ -100,6 +151,20 @@ mod win {
         { false }
     }
 
+    fn checksum_range(base: *const u8, len: usize) -> u32 {
+        let mut crc = 0xFFFFFFFFu32;
+        let limit = len.min(4 * 1024 * 1024);
+        for i in 0..limit {
+            let byte = unsafe { *(base.add(i)) as u32 };
+            crc ^= byte << 24;
+            for _ in 0..8 {
+                if crc & 0x80000000 != 0 { crc = (crc << 1) ^ 0x04C11DB7; }
+                else { crc <<= 1; }
+            }
+        }
+        crc ^ 0xFFFFFFFF
+    }
+
     fn checksum_text() -> u32 {
         unsafe {
             let base = GetModuleHandleA(std::ptr::null());
@@ -110,17 +175,7 @@ mod win {
             let sect_hdr = nt.add(0x18);
             let sect_size = *(sect_hdr.add(0x10) as *const u32) as usize;
             let sect_addr = base.add(*(sect_hdr.add(0x14) as *const u32) as usize);
-            let mut crc = 0xFFFFFFFFu32;
-            let len = sect_size.min(4 * 1024 * 1024);
-            for i in 0..len {
-                let byte = *(sect_addr.add(i) as *const u8) as u32;
-                crc ^= byte << 24;
-                for _ in 0..8 {
-                    if crc & 0x80000000 != 0 { crc = (crc << 1) ^ 0x04C11DB7; }
-                    else { crc <<= 1; }
-                }
-            }
-            crc ^ 0xFFFFFFFF
+            checksum_range(sect_addr as *const u8, sect_size)
         }
     }
 
@@ -148,6 +203,66 @@ mod win {
         { false }
     }
 
+    fn check_vm_hypervisor_brand() -> bool {
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            let mut leaf: u32 = 0x40000000;
+            let mut brand = [0u8; 16];
+            std::arch::asm!(
+                "cpuid",
+                in("eax") leaf,
+                out("ecx") _,
+                out("edx") _,
+                lateout("ebx") _,
+                options(nostack, att_syntax)
+            );
+            leaf = 0x40000001;
+            let mut b: u32;
+            let mut c: u32;
+            let mut d: u32;
+            std::arch::asm!(
+                "cpuid",
+                in("eax") leaf,
+                out("ebx") b,
+                out("ecx") c,
+                out("edx") d,
+                options(nostack, att_syntax)
+            );
+            std::ptr::copy_nonoverlapping(&b as *const u32 as *const u8, brand.as_mut_ptr(), 4);
+            std::ptr::copy_nonoverlapping(&c as *const u32 as *const u8, brand.as_mut_ptr().add(4), 4);
+            std::ptr::copy_nonoverlapping(&d as *const u32 as *const u8, brand.as_mut_ptr().add(8), 4);
+            let s = String::from_utf8_lossy(&brand);
+            s == "Microsoft Hv" || s == "VMwareVMware" || s == "KVMKVM  KVM"
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        { false }
+    }
+
+    fn check_anti_hook(func_name: &str, expected_bytes: &[u8]) -> bool {
+        let Some(ptr) = resolve_ntdll(func_name) else { return false };
+        unsafe {
+            let ptr = ptr as *const u8;
+            let mut matches = true;
+            for i in 0..expected_bytes.len() {
+                if *ptr.add(i) != expected_bytes[i] {
+                    matches = false;
+                    break;
+                }
+            }
+            !matches
+        }
+    }
+
+    fn check_ntdll_hooks() -> bool {
+        let hooked1 = check_anti_hook("NtQueryInformationProcess",
+            &[0x4C, 0x8B, 0xD1, 0xB8, 0x17, 0x00, 0x00, 0x00, 0xF6, 0x04, 0x25]);
+        let hooked2 = check_anti_hook("NtSetInformationThread",
+            &[0x4C, 0x8B, 0xD1, 0xB8, 0x0D, 0x00, 0x00, 0x00, 0xF6, 0x04, 0x25]);
+        let hooked3 = check_anti_hook("NtDelayExecution",
+            &[0x4C, 0x8B, 0xD1, 0xB8, 0x34, 0x00, 0x00, 0x00, 0xF6, 0x04, 0x25]);
+        hooked1 || hooked2 || hooked3
+    }
+
     pub fn run_checks() -> bool {
         let mut detected = false;
 
@@ -158,10 +273,15 @@ mod win {
 
         if check_debug_port() { detected = true; }
         if check_debug_object() { detected = true; }
+        if check_debug_flags() { detected = true; }
+        if check_peb_flag() { detected = true; }
+        if check_hw_breakpoints() { detected = true; }
         if check_timing() { detected = true; }
         if rdtsc_timing() { detected = true; }
         if !verify_integrity() { detected = true; }
         if check_vm() { detected = true; }
+        if check_vm_hypervisor_brand() { detected = true; }
+        if check_ntdll_hooks() { detected = true; }
 
         hide_from_debugger();
         detected
@@ -186,6 +306,18 @@ mod win {
             x ^= x >> 16;
         }
         if x == 0 { std::hint::black_box(x); }
+        let mut y = 0xCAFEBABEu64;
+        y = y.wrapping_mul(0x9E3779B9);
+        y ^= y >> 13;
+        y = y.wrapping_mul(0x9E3779B9);
+        y ^= y >> 17;
+        std::hint::black_box(y);
+        let mut z: u64 = 0;
+        for i in 0..10 {
+            z = z.wrapping_add((i as u64).wrapping_mul(0x9E3779B9));
+            z = z.rotate_left(5);
+        }
+        std::hint::black_box(z);
     }
 }
 

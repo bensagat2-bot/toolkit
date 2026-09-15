@@ -50,12 +50,12 @@ const busy = ref(false)
 const history = ref([])
 const historyIndex = ref(-1)
 const dragOver = ref(false)
-const deviceMode = ref('') // '', 'adb', or 'fastboot'
+const deviceStatus = ref('') // '', 'adb', 'fastboot', or device serial info
 let unlistenDragDrop = null
 
 const deviceLabel = computed(() => {
-  const last = [...lines.value].reverse().find((l) => l.kind === 'info' && /device|connected|fastboot/i.test(l.text))
-  return last ? `device: ${last.text}` : 'waiting for device'
+  if (deviceStatus.value) return `device: ${deviceStatus.value}`
+  return 'waiting for device'
 })
 
 const scrollBottom = () => {
@@ -135,14 +135,14 @@ async function runCommand() {
   let cmd = current.value.trim()
   if (!cmd || busy.value) return
 
-  // Auto-prepend adb/fastboot when device mode is known and command is not
+  // Auto-prepend adb/fastboot when device is known and command is not
   // already prefixed and doesn't start with a known tool keyword.
   const knownTools = ['adb', 'fastboot', 'scrcpy', 'clear', 'cd', 'dir', 'echo', 'help', 'exit']
   const first = cmd.split(/\s+/)[0].toLowerCase()
-  if (deviceMode.value && !knownTools.includes(first)) {
-    if (deviceMode.value === 'fastboot') {
+  if (deviceStatus.value && !knownTools.includes(first)) {
+    if (deviceStatus.value.startsWith('fastboot')) {
       cmd = `fastboot ${cmd}`
-    } else if (deviceMode.value === 'adb') {
+    } else if (deviceStatus.value.startsWith('adb')) {
       cmd = `adb ${cmd}`
     }
   }
@@ -183,6 +183,7 @@ const onOutput = (_event, data) => {
 onMounted(async () => {
   push('info', 'V1per terminal. Type adb/fastboot commands. Drag & drop a file to insert its path.')
   push('info', 'Try: adb devices | fastboot devices | adb shell getprop ro.product.model')
+  push('info', 'Device polling active - connected devices appear here.')
   await rendererOn('term:output', onOutput)
   const { getCurrentWindow } = await import('@tauri-apps/api/window')
   unlistenDragDrop = await getCurrentWindow().onDragDropEvent((event) => {
@@ -195,12 +196,15 @@ onMounted(async () => {
   // Detect device mode on mount and poll every 3s
   const pollDevice = async () => {
     try {
-      const info = await sendIpcToMain('xiaomi_detect_device')
+      const info = await sendIpcToMain('detect_device')
       if (info?.mode && info.mode !== 'none') {
-        deviceMode.value = info.mode
+        const serial = info.serial || 'connected'
+        deviceStatus.value = `${info.mode} (${serial})`
+      } else {
+        deviceStatus.value = ''
       }
     } catch {
-      // device detection not critical
+      deviceStatus.value = ''
     }
   }
   await pollDevice()

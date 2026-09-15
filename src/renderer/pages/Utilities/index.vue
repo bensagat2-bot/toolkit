@@ -31,21 +31,6 @@
       </div>
 
       <div class="op-card">
-        <div class="op-icon">A</div>
-        <div class="op-body">
-          <h3>AnyKernel</h3>
-          <p>Flash an AnyKernel zip via adb root or fastboot boot.img payload.</p>
-          <div class="row">
-            <input :value="anyKernelZip" class="text-input" placeholder="AnyKernel zip" readonly />
-            <button class="btn btn-sm" @click="pickZip">Browse</button>
-          </div>
-          <button class="btn btn-primary op-run" @click="runAnyKernel" :disabled="!anyKernelZip">
-            Run AnyKernel
-          </button>
-        </div>
-      </div>
-
-      <div class="op-card">
         <div class="op-icon">F</div>
         <div class="op-body">
           <h3>Force Fastboot</h3>
@@ -78,7 +63,6 @@ import { setPending } from './runStore'
 
 const router = useRouter()
 const rootBootImg = ref('')
-const anyKernelZip = ref('')
 const rootManager = ref('ksu-next')
 
 const pickRootImage = async () => {
@@ -86,18 +70,8 @@ const pickRootImage = async () => {
   if (res.filePaths && res.filePaths.length) rootBootImg.value = res.filePaths[0]
 }
 
-const pickZip = async () => {
-  const res = await showSelectDialog({ title: 'Select AnyKernel zip', filters: [{ name: 'ZIP', extensions: ['zip'] }] })
-  if (res.filePaths && res.filePaths.length) anyKernelZip.value = res.filePaths[0]
-}
-
 function runRoot() {
   setPending({ type: 'root', boot_img: rootBootImg.value, manager: rootManager.value })
-  router.push({ path: '/utilities/run' })
-}
-
-function runAnyKernel() {
-  setPending({ type: 'anykernel', zip: anyKernelZip.value })
   router.push({ path: '/utilities/run' })
 }
 

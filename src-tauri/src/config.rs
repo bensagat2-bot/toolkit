@@ -13,13 +13,15 @@ macro_rules! obf {
             }
             buf
         };
-        let mut dec = [0u8; LEN];
-        let mut i = 0;
-        while i < LEN {
-            dec[i] = OBF[i] ^ KEY;
-            i += 1;
-        }
-        unsafe { std::str::from_utf8_unchecked(&dec) }
+        static DEC: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        let dec = DEC.get_or_init(|| {
+            let mut s = String::with_capacity(LEN);
+            for &b in &OBF {
+                s.push((b ^ KEY) as char);
+            }
+            s
+        });
+        dec.as_str()
     }};
 }
 

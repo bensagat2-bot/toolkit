@@ -410,16 +410,6 @@ pub async fn utils_root(
 }
 
 #[command]
-pub async fn utils_anykernel(
-    app: tauri::AppHandle,
-    opts: crate::services::utils::AnyKernelOptions,
-) -> Result<bool, String> {
-    tauri::async_runtime::spawn_blocking(move || crate::services::utils::anykernel(app, opts))
-        .await
-        .map_err(|e| format!("AnyKernel task failed: {e}"))?
-}
-
-#[command]
 pub async fn utils_force_fastboot(app: tauri::AppHandle) -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(move || crate::services::utils::force_fastboot(app))
         .await
