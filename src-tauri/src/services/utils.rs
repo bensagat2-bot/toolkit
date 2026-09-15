@@ -640,7 +640,6 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
             ("https://api.github.com/repos/KernelSU-Next/KernelSU-Next/releases/latest", "KernelSU-Next", "KernelSU.apk", "universal")
         }
     };
-    let use_folk = mgr == "folkpatch";
     emit(&app, "Checking ADB Connection...");
     let serial = match ready_adb_device() {
         Ok(s) => {
