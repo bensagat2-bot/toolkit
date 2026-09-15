@@ -244,7 +244,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useAccountStore } from '@renderer/store/accountStore'
 import { API_BASE } from '@renderer/config'
