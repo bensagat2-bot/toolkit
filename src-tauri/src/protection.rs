@@ -206,31 +206,11 @@ mod win {
     fn check_vm_hypervisor_brand() -> bool {
         #[cfg(target_arch = "x86_64")]
         unsafe {
-            let mut leaf: u32 = 0x40000000;
+            let res = std::arch::x86_64::__cpuid_count(0x40000001, 0);
             let mut brand = [0u8; 16];
-            std::arch::asm!(
-                "cpuid",
-                in("eax") leaf,
-                out("ecx") _,
-                out("edx") _,
-                lateout("ebx") _,
-                options(nostack, att_syntax)
-            );
-            leaf = 0x40000001;
-            let mut b: u32;
-            let mut c: u32;
-            let mut d: u32;
-            std::arch::asm!(
-                "cpuid",
-                in("eax") leaf,
-                out("ebx") b,
-                out("ecx") c,
-                out("edx") d,
-                options(nostack, att_syntax)
-            );
-            std::ptr::copy_nonoverlapping(&b as *const u32 as *const u8, brand.as_mut_ptr(), 4);
-            std::ptr::copy_nonoverlapping(&c as *const u32 as *const u8, brand.as_mut_ptr().add(4), 4);
-            std::ptr::copy_nonoverlapping(&d as *const u32 as *const u8, brand.as_mut_ptr().add(8), 4);
+            std::ptr::copy_nonoverlapping(&res.ebx as *const u32 as *const u8, brand.as_mut_ptr(), 4);
+            std::ptr::copy_nonoverlapping(&res.ecx as *const u32 as *const u8, brand.as_mut_ptr().add(4), 4);
+            std::ptr::copy_nonoverlapping(&res.edx as *const u32 as *const u8, brand.as_mut_ptr().add(8), 4);
             let s = String::from_utf8_lossy(&brand);
             s == "Microsoft Hv" || s == "VMwareVMware" || s == "KVMKVM  KVM"
         }
