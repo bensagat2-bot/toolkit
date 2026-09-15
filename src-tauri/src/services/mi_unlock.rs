@@ -27,7 +27,7 @@ fn hmac_sha1_base64(key: &str, data: &str) -> String {
     base64::engine::general_purpose::STANDARD.encode(result)
 }
 
-}
+fn url_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {
