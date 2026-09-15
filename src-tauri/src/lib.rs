@@ -117,11 +117,6 @@ pub fn run() {
             commands::backup_rename,
             commands::backup_delete,
             commands::backup_download_selected,
-            commands::debloat_list_packages,
-            commands::debloat_uninstall,
-            commands::debloat_enable,
-            commands::debloat_get_icons,
-            commands::debloat_get_icon,
             commands::xiaomi_detect_device,
             commands::xiaomi_get_product,
             commands::xiaomi_get_token,
@@ -131,6 +126,11 @@ pub fn run() {
             commands::xiaomi_scan_rom,
             commands::xiaomi_run_fastboot,
             commands::xiaomi_run_adb,
+            commands::miunlock_start_login,
+            commands::miunlock_create_session,
+            commands::miunlock_resolve_region,
+            commands::miunlock_get_device_token,
+            commands::miunlock_perform_unlock,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

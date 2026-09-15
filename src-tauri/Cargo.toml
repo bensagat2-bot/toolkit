@@ -26,6 +26,12 @@ rfd = "0.15"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 sha2 = "0.10"
+hmac = "0.12"
+sha1 = "0.10"
+rand = "0.8"
+url = "2"
+hex = "0.4"
+md-5 = "0.10"
 serialport = "4"
 flate2 = "1"
 xz2 = "0.1"

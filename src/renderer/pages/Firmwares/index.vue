@@ -71,90 +71,176 @@
 
     <!-- Detail Modal -->
     <transition name="modal">
-      <div class="fw-overlay" v-if="selectedItem" @click.self="selectedItem = null">
+      <div class="fw-overlay" v-if="selectedItem" @click.self="handleOverlayClick">
         <div class="fw-modal">
-        <div class="modal-header">
-          <h3>{{ selectedItem.device_name || selectedItem.project }}</h3>
-          <button class="modal-close" @click="selectedItem = null">&times;</button>
+
+          <!-- Header -->
+          <div class="modal-header">
+            <h3>{{ selectedItem.device_name || selectedItem.project }}</h3>
+            <button class="modal-close" @click="selectedItem = null">&times;</button>
+          </div>
+
+          <div class="modal-body">
+
+            <!-- ── Info View ── -->
+            <template v-if="viewMode === 'info'">
+              <div class="modal-info">
+                <div class="info-row"><span>Version</span><span>{{ selectedItem.version }}</span></div>
+                <div class="info-row" v-if="selectedItem.android"><span>Android</span><span>{{ selectedItem.android }}</span></div>
+                <div class="info-row" v-if="selectedItem.codename"><span>Codename</span><span>{{ selectedItem.codename }}</span></div>
+                <div class="info-row" v-if="selectedItem.mainboard"><span>Mainboard</span><span>{{ selectedItem.mainboard }}</span></div>
+                <div class="info-row" v-if="selectedItem.brand"><span>Brand</span><span>{{ selectedItem.brand }}</span></div>
+                <div class="info-row" v-if="selectedItem.method"><span>Method</span><span>{{ selectedItem.method }}</span></div>
+                <div class="info-row" v-if="selectedItem.region"><span>Region</span><span>{{ selectedItem.region }}</span></div>
+                <div class="info-row" v-if="selectedItem.date"><span>Date</span><span>{{ selectedItem.date }}</span></div>
+                <div class="info-row" v-if="selectedItem.platform"><span>Platform</span><span>{{ selectedItem.platform }}</span></div>
+                <div class="info-row" v-if="selectedItem.market_type"><span>Market</span><span>{{ selectedItem.market_type }}</span></div>
+              </div>
+
+              <div class="modal-link-section" v-if="!confirmingPurchase && !linkRevealed">
+                <div class="credit-cost-msg">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg>
+                  <span>This firmware requires <strong>5 credits</strong> to download.</span>
+                </div>
+                <div class="credit-actions">
+                  <button class="btn btn-primary" @click="startPurchase" :disabled="credits < 5">Yes, download</button>
+                  <button class="btn" @click="selectedItem = null">No, cancel</button>
+                </div>
+                <div v-if="credits < 5" class="insufficient-msg">Insufficient credits. You have {{ credits }} credits.</div>
+              </div>
+
+              <div class="modal-link-section" v-if="confirmingPurchase">
+                <div class="confirm-msg">
+                  <span>Are you sure you want to spend <strong>5 credits</strong> on this firmware?</span>
+                </div>
+                <div class="credit-actions">
+                  <button class="btn btn-primary" @click="confirmDownload">Yes, buy</button>
+                  <button class="btn" @click="confirmingPurchase = false">Cancel</button>
+                </div>
+              </div>
+
+              <div class="modal-link-section processing-section" v-if="processingOrder">
+                <div class="processing-ring"></div>
+                <div class="processing-msg">
+                  <p>Please wait, processing your order...</p>
+                  <p class="processing-sub">Preparing your download link</p>
+                </div>
+              </div>
+
+              <transition name="fade">
+                <div class="error-msg" v-if="showError">{{ errorMsg }}</div>
+              </transition>
+
+              <div class="modal-link-section" v-if="linkRevealed && revealedLink">
+                <div class="purchase-actions">
+                  <button class="btn btn-primary" @click="copyLink">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    {{ copied ? 'Copied!' : 'Copy Download Link' }}
+                  </button>
+                  <button class="btn btn-primary" :class="{ clicked: extractClicked }" @click="openExtract" :disabled="!canExtract">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+                    Extract Partition
+                  </button>
+                </div>
+                <div class="link-note" v-if="revealedCode">
+                  Password: <strong>{{ revealedCode }}</strong>
+                </div>
+              </div>
+
+              <div class="modal-link-section" v-if="selectedItem.has_link === false">
+                <div class="no-link-msg">No download link available for this firmware.</div>
+              </div>
+            </template>
+
+            <!-- ── Extract View (inline in modal) ── -->
+            <template v-if="viewMode === 'extract'">
+
+              <!-- TGZ fastboot - simple name input -->
+              <div class="fastboot-form" v-if="isTgz && !extractLoading && !extractError">
+                <p class="hint">Fastboot .tgz archive - enter the image name to extract.</p>
+                <div class="field">
+                  <label>Image name</label>
+                  <input v-model="extractTgzName" class="text-input" placeholder="init_boot" />
+                </div>
+              </div>
+
+              <!-- Loading partitions -->
+              <div class="extract-loading" v-if="extractLoading && !isTgz">
+                <div class="processing-ring"></div>
+                <p class="extract-loading-text">Please wait, listing all partitions...</p>
+              </div>
+
+              <!-- Error -->
+              <div class="error-msg" v-if="extractError">{{ extractError }}</div>
+
+              <!-- Partition list (loaded) -->
+              <template v-if="!extractLoading && !extractError && !isTgz && extractPartitions.length">
+                <div class="part-header">
+                  <span class="selection-count">{{ extractSelected.length }} / {{ extractPartitions.length }} selected</span>
+                  <div class="part-actions">
+                    <button class="btn-link" @click="extractSelectAll">Select All</button>
+                    <button class="btn-link" @click="extractDeselectAll">Deselect All</button>
+                  </div>
+                </div>
+                <div class="part-list scroll">
+                  <div
+                    v-for="p in extractPartitions"
+                    :key="p.name"
+                    :class="['part-row', { selected: extractIsSelected(p) }]"
+                    @click="extractToggle(p)"
+                  >
+                    <span class="col-check" @click.stop>
+                      <input type="checkbox" :checked="extractIsSelected(p)" @change="extractToggle(p)" />
+                    </span>
+                    <span class="part-name">{{ p.name }}</span>
+                    <span class="part-size">{{ formatMb(p.size_bytes) }}</span>
+                  </div>
+                </div>
+              </template>
+
+              <!-- Empty partition list -->
+              <div class="no-link-msg" v-if="!extractLoading && !extractError && !isTgz && extractPartitions.length === 0">
+                No partitions found in this firmware.
+              </div>
+
+              <!-- Output folder -->
+              <div class="field" v-if="!extractLoading && !extractError">
+                <label>Output folder</label>
+                <div class="row">
+                  <input :value="extractOutputDir" class="text-input" placeholder="Choose output folder" readonly />
+                  <button class="btn btn-sm" @click="browseExtractFolder">Browse</button>
+                </div>
+              </div>
+
+              <!-- Progress -->
+              <div class="extract-progress" v-if="extractExtracting">
+                <div class="processing-ring"></div>
+                <p>{{ extractProgressText }}</p>
+                <div class="progress-bar-wrap">
+                  <div class="progress-bar" :style="{ width: extractProgress + '%' }"></div>
+                </div>
+              </div>
+
+              <!-- Done -->
+              <div class="done-msg" v-if="extractDone">
+                <span class="status-ok">{{ extractDone }}</span>
+              </div>
+
+              <!-- Actions -->
+              <div class="extract-actions" v-if="!extractExtracting">
+                <button class="btn btn-sm" @click="viewMode = 'info'">Back</button>
+                <button class="btn btn-primary" @click="startExtract" :disabled="!extractCanStart">
+                  {{ extractButtonLabel }}
+                </button>
+                <button class="btn" @click="selectedItem = null">Close</button>
+              </div>
+            </template>
+
+          </div>
         </div>
-        <div class="modal-body">
-          <div class="modal-info">
-            <div class="info-row"><span>Version</span><span>{{ selectedItem.version }}</span></div>
-            <div class="info-row" v-if="selectedItem.android"><span>Android</span><span>{{ selectedItem.android }}</span></div>
-            <div class="info-row" v-if="selectedItem.codename"><span>Codename</span><span>{{ selectedItem.codename }}</span></div>
-            <div class="info-row" v-if="selectedItem.mainboard"><span>Mainboard</span><span>{{ selectedItem.mainboard }}</span></div>
-            <div class="info-row" v-if="selectedItem.brand"><span>Brand</span><span>{{ selectedItem.brand }}</span></div>
-            <div class="info-row" v-if="selectedItem.method"><span>Method</span><span>{{ selectedItem.method }}</span></div>
-            <div class="info-row" v-if="selectedItem.region"><span>Region</span><span>{{ selectedItem.region }}</span></div>
-            <div class="info-row" v-if="selectedItem.date"><span>Date</span><span>{{ selectedItem.date }}</span></div>
-            <div class="info-row" v-if="selectedItem.platform"><span>Platform</span><span>{{ selectedItem.platform }}</span></div>
-            <div class="info-row" v-if="selectedItem.market_type"><span>Market</span><span>{{ selectedItem.market_type }}</span></div>
-          </div>
-
-          <div class="modal-link-section" v-if="!confirmingPurchase && !linkRevealed">
-            <div class="credit-cost-msg">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg>
-              <span>This firmware requires <strong>5 credits</strong> to download.</span>
-            </div>
-            <div class="credit-actions">
-              <button class="btn btn-primary" @click="startPurchase" :disabled="credits < 5">Yes, download</button>
-              <button class="btn" @click="selectedItem = null">No, cancel</button>
-            </div>
-            <div v-if="credits < 5" class="insufficient-msg">Insufficient credits. You have {{ credits }} credits.</div>
-          </div>
-
-          <div class="modal-link-section" v-if="confirmingPurchase">
-            <div class="confirm-msg">
-              <span>Are you sure you want to spend <strong>5 credits</strong> on this firmware?</span>
-            </div>
-            <div class="credit-actions">
-              <button class="btn btn-primary" @click="confirmDownload">Yes, buy</button>
-              <button class="btn" @click="confirmingPurchase = false">Cancel</button>
-            </div>
-          </div>
-
-          <div class="modal-link-section processing-section" v-if="processingOrder">
-            <div class="processing-ring"></div>
-            <div class="processing-msg">
-              <p>Please wait, processing your order...</p>
-              <p class="processing-sub">Preparing your download link</p>
-            </div>
-          </div>
-
-          <transition name="fade">
-            <div class="error-msg" v-if="showError">{{ errorMsg }}</div>
-          </transition>
-
-          <div class="modal-link-section" v-if="linkRevealed && revealedLink">
-            <div class="purchase-actions">
-              <button class="btn btn-primary" @click="copyLink">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                {{ copied ? 'Copied!' : 'Copy Download Link' }}
-              </button>
-              <button class="btn btn-primary" :class="{ clicked: extractClicked }" @click="openExtract" :disabled="!canExtract">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-                Extract Partition
-              </button>
-            </div>
-            <div class="link-note" v-if="revealedCode">
-              Password: <strong>{{ revealedCode }}</strong>
-            </div>
-          </div>
-
-          <div class="modal-link-section" v-if="selectedItem.has_link === false">
-            <div class="no-link-msg">No download link available for this firmware.</div>
-          </div>
-        </div>
-      </div>
       </div>
     </transition>
 
-    <ExtractDialog
-      v-if="showExtract && revealedLink"
-      :url="revealedLink"
-      :pwd="revealedCode"
-      @close="closeExtract"
-    />
   </div>
 </template>
 
@@ -162,7 +248,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useAccountStore } from '@renderer/store/accountStore'
 import { API_BASE } from '@renderer/config'
-import ExtractDialog from './ExtractDialog.vue'
+import { sendIpcToMain, sendIpcWithTimeout, showSelectFolder } from '@renderer/utils/ipc'
 
 const store = useAccountStore()
 const items = ref([])
@@ -186,11 +272,49 @@ const showError = ref(false)
 const showExtract = ref(false)
 const extractClicked = ref(false)
 const lastUpdated = ref('')
+const viewMode = ref<'info' | 'extract'>('info')
+const extractLoading = ref(false)
+const extractPartitions = ref<any[]>([])
+const extractError = ref('')
+const extractSelected = ref<string[]>([])
+const extractOutputDir = ref('')
+const extractExtracting = ref(false)
+const extractProgress = ref(0)
+const extractProgressText = ref('')
+const extractDone = ref('')
+const extractTgzName = ref('init_boot')
 
 const canExtract = computed(() => {
   const link = revealedLink.value
   if (!link) return false
   return true
+})
+
+const extractCanStart = computed(() => {
+  if (!extractOutputDir.value) return false
+  if (isTgz.value) return !!extractTgzName.value.trim()
+  return extractSelected.value.length > 0
+})
+
+const extractButtonLabel = computed(() => {
+  if (isTgz.value) return 'Extract .img'
+  return `Extract (${extractSelected.value.length})`
+})
+
+const isTgz = computed(() => {
+  const link = revealedLink.value
+  return link && link.endsWith('.tgz')
+})
+
+const isFrbox = computed(() => {
+  const link = revealedLink.value
+  return link && link.includes('/disk/s/')
+})
+
+const isFastbootZip = computed(() => {
+  const link = revealedLink.value
+  if (!link || isFrbox.value || isTgz.value) return false
+  return link.includes('images_') || link.includes('fastboot')
 })
 
 // Builds the full FRBox URL with the password embedded, handling bare paths.
@@ -207,15 +331,145 @@ function frboxUrl(link, pwd) {
   }
 }
 
+function handleOverlayClick() {
+  if (viewMode.value === 'extract' && extractExtracting.value) return
+  selectedItem.value = null
+}
+
 function openExtract() {
   extractClicked.value = true
   setTimeout(() => { extractClicked.value = false }, 300)
-  selectedItem.value = null
-  showExtract.value = true
+  viewMode.value = 'extract'
+  extractLoading.value = true
+  extractError.value = ''
+  extractPartitions.value = []
+  extractSelected.value = []
+  extractOutputDir.value = ''
+  extractDone.value = ''
+  extractTgzName.value = 'init_boot'
+  if (isTgz.value) {
+    extractLoading.value = false
+  } else {
+    loadPartitions()
+  }
 }
 
 function closeExtract() {
-  showExtract.value = false
+  if (extractExtracting.value) return
+  viewMode.value = 'info'
+}
+
+async function loadPartitions() {
+  extractLoading.value = true
+  extractError.value = ''
+  const link = revealedLink.value
+  try {
+    let list: any[] = []
+    if (isFrbox.value) {
+      const entries = await sendIpcWithTimeout('frbox_list_partitions', {
+        url: link,
+        pwd: revealedCode.value || null,
+      }, 60000)
+      list = (entries || [])
+        .filter((e: any) => e.uncompressed_size > 0)
+        .map((e: any) => ({ name: e.name, size_bytes: e.uncompressed_size }))
+    } else if (isFastbootZip.value) {
+      const images = await sendIpcWithTimeout('ota_list_fastboot_images', { url: link }, 60000)
+      list = (images || []).map((e: any) => ({ name: e.name, size_bytes: e.size_bytes }))
+    } else {
+      list = await sendIpcWithTimeout('ota_list_partitions', { url: link }, 120000)
+    }
+    extractPartitions.value = list
+    extractSelected.value = list.map((p: any) => p.name)
+  } catch (e: any) {
+    extractError.value = e?.message || e || 'Failed to read partitions'
+  }
+  extractLoading.value = false
+}
+
+function extractIsSelected(p: any) {
+  return extractSelected.value.includes(p.name)
+}
+
+function extractToggle(p: any) {
+  const idx = extractSelected.value.indexOf(p.name)
+  if (idx >= 0) extractSelected.value.splice(idx, 1)
+  else extractSelected.value.push(p.name)
+}
+
+function extractSelectAll() {
+  extractSelected.value = extractPartitions.value.map((p) => p.name)
+}
+
+function extractDeselectAll() {
+  extractSelected.value = []
+}
+
+function formatMb(bytes: number) {
+  const mb = (bytes || 0) / 1024 / 1024
+  return `${mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : mb.toFixed(1) + ' MB'}`
+}
+
+async function browseExtractFolder() {
+  const dir = await showSelectFolder('Choose output folder')
+  if (dir) extractOutputDir.value = dir
+}
+
+async function startExtract() {
+  extractDone.value = ''
+  extractError.value = ''
+  extractExtracting.value = true
+  extractProgress.value = 0
+
+  const names = isTgz.value ? [extractTgzName.value] : extractSelected.value
+  let total = names.length
+  let completed = 0
+
+  for (const name of names) {
+    extractProgressText.value = isTgz.value
+      ? `Extracting ${name}.img...`
+      : `Extracting ${name}.img... (${completed + 1}/${total})`
+    extractProgress.value = total > 1 ? Math.round((completed / total) * 100) : 0
+    try {
+      const stem = name.replace(/\.img$/i, '')
+      if (isFrbox.value) {
+        await sendIpcToMain('frbox_extract_partition', {
+          url: revealedLink.value,
+          pwd: revealedCode.value || null,
+          name: name,
+          outputPath: `${extractOutputDir.value}\\${stem}`,
+        })
+      } else if (isFastbootZip.value) {
+        await sendIpcToMain('ota_extract_fastboot_image', {
+          url: revealedLink.value,
+          imageName: name,
+          outputPath: `${extractOutputDir.value}\\${stem}.img`,
+        })
+      } else if (isTgz.value) {
+        await sendIpcToMain('ota_extract_tgz', {
+          url: revealedLink.value,
+          imageName: name,
+          outputPath: `${extractOutputDir.value}\\${stem}.img`,
+        })
+      } else {
+        await sendIpcToMain('ota_extract_partition', {
+          url: revealedLink.value,
+          partition: name,
+          outputPath: `${extractOutputDir.value}\\${stem}.img`,
+        })
+      }
+      completed++
+      if (completed === total) {
+        extractDone.value = total > 1 ? `${completed}/${total} partitions extracted` : `${name}.img saved`
+      }
+    } catch (e: any) {
+      extractError.value = `${name}: ${e?.message || e || 'Extraction failed'}`
+      extractExtracting.value = false
+      return
+    }
+  }
+  extractProgress.value = 100
+  extractExtracting.value = false
 }
 
 let searchTimer = null
@@ -440,4 +694,34 @@ onBeforeUnmount(() => {
 .fade-enter-active, .fade-leave-active { transition: opacity 0.25s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 .error-msg { font-size: 12px; color: #f44336; text-align: center; padding: 8px; }
+
+/* Extract inline styles */
+.hint { font-size: 12px; color: var(--text-secondary); margin: 0 0 8px; }
+.fastboot-form { margin-bottom: 8px; }
+.extract-loading { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 30px 0; }
+.extract-loading-text { font-size: 13px; color: var(--text-primary); margin: 0; font-weight: 600; }
+.part-header { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
+.selection-count { font-size: 11px; color: var(--accent-primary); font-weight: 600; }
+.part-actions { display: flex; gap: 10px; }
+.btn-link { background: none; border: none; color: var(--accent-primary); font-size: 11px; cursor: pointer; padding: 0; }
+.btn-link:hover:not(:disabled) { text-decoration: underline; }
+.btn-link:disabled { opacity: 0.4; cursor: not-allowed; }
+.part-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--border-primary); border-radius: 6px; }
+.part-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 12px; cursor: pointer; border-bottom: 1px solid var(--border-primary); transition: background 0.15s; }
+.part-row:last-child { border-bottom: none; }
+.part-row:hover { background: var(--bg-tertiary); }
+.part-row.selected { background: color-mix(in srgb, var(--accent-primary) 8%, transparent); }
+.col-check { flex: none; width: 20px; display: flex; align-items: center; input { accent-color: var(--accent-primary); cursor: pointer; } }
+.part-name { flex: 1; font-weight: 500; font-family: monospace; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.part-size { flex: none; color: var(--text-secondary); font-size: 11px; white-space: nowrap; }
+.field { display: flex; flex-direction: column; gap: 4px; label { font-size: 11px; color: var(--text-secondary); } }
+.text-input { width: 100%; background: var(--bg-primary); border: 1px solid var(--border-primary); border-radius: 4px; padding: 8px 10px; font-size: 12px; color: var(--text-primary); outline: none; box-sizing: border-box; }
+.text-input:focus { border-color: var(--accent-primary); }
+.row { display: flex; gap: 6px; .text-input { flex: 1; } }
+.extract-progress { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px; border: 1px solid var(--border-primary); border-radius: 6px; background: var(--bg-tertiary); p { font-size: 12px; margin: 0; } }
+.progress-bar-wrap { width: 100%; height: 4px; background: var(--border-primary); border-radius: 2px; overflow: hidden; }
+.progress-bar { height: 100%; background: var(--accent-primary); border-radius: 2px; transition: width 0.3s ease; }
+.done-msg { font-size: 12px; text-align: center; padding: 8px; }
+.status-ok { color: #4caf50; }
+.extract-actions { display: flex; gap: 8px; margin-top: 8px; .btn { flex: 1; } }
 </style>

@@ -1,10 +1,10 @@
 pub mod adb;
 pub mod account;
 pub mod backup;
-pub mod debloat;
 pub mod device;
 pub mod fastboot;
 pub mod frbox;
+pub mod mi_unlock;
 pub mod mtk;
 pub mod ota;
 pub mod unisoc;

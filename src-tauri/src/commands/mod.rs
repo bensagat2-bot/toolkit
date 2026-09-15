@@ -483,41 +483,6 @@ pub async fn utils_scrcpy(app: tauri::AppHandle) -> Result<bool, String> {
         .map_err(|e| format!("Scrcpy task failed: {e}"))?
 }
 
-// ── Debloat Commands ─────────────────────────────────────────
-
-#[command]
-pub async fn debloat_list_packages() -> Result<Vec<crate::services::debloat::AppInfo>, String> {
-    tauri::async_runtime::spawn_blocking(move || crate::services::debloat::list_packages())
-        .await
-        .map_err(|e| format!("Debloat task failed: {e}"))?
-}
-
-#[command]
-pub async fn debloat_uninstall(package_name: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || crate::services::debloat::uninstall_package(package_name))
-        .await
-        .map_err(|e| format!("Debloat task failed: {e}"))?
-}
-
-#[command]
-pub async fn debloat_enable(package_name: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || crate::services::debloat::enable_package(package_name))
-        .await
-        .map_err(|e| format!("Debloat task failed: {e}"))?
-}
-
-#[command]
-pub async fn debloat_get_icons(package_names: Vec<String>) -> std::collections::HashMap<String, String> {
-    crate::services::debloat::get_icons(package_names)
-}
-
-#[command]
-pub async fn debloat_get_icon(package_name: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || crate::services::debloat::get_icon(&package_name))
-        .await
-        .map_err(|e| format!("Debloat icon task failed: {e}"))?
-}
-
 // ── Xiaomi Commands ──────────────────────────────────────────
 
 #[command]
@@ -563,4 +528,52 @@ pub async fn xiaomi_run_fastboot(args: Vec<String>) -> Result<String, String> {
 #[command]
 pub async fn xiaomi_run_adb(args: Vec<String>) -> Result<String, String> {
     Ok(crate::services::xiaomi::run_adb_cmd(args))
+}
+
+// ── MiUnlock Commands ────────────────────────────────────────
+
+#[command]
+pub async fn miunlock_start_login() -> Result<crate::services::mi_unlock::LoginResult, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::mi_unlock::start_login())
+        .await
+        .map_err(|e| format!("Login task failed: {e}"))?
+}
+
+#[command]
+pub async fn miunlock_create_session(
+    auth_code: String,
+) -> Result<crate::services::mi_unlock::SessionInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::mi_unlock::create_session(&auth_code))
+        .await
+        .map_err(|e| format!("Session task failed: {e}"))?
+}
+
+#[command]
+pub async fn miunlock_resolve_region(
+    session: crate::services::mi_unlock::SessionInfo,
+) -> Result<crate::services::mi_unlock::RegionInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::mi_unlock::resolve_region(&session))
+        .await
+        .map_err(|e| format!("Region task failed: {e}"))?
+}
+
+#[command]
+pub async fn miunlock_get_device_token() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::mi_unlock::get_device_token())
+        .await
+        .map_err(|e| format!("Device token task failed: {e}"))?
+}
+
+#[command]
+pub async fn miunlock_perform_unlock(
+    session: crate::services::mi_unlock::SessionInfo,
+    region: crate::services::mi_unlock::RegionInfo,
+    product: String,
+    device_token: String,
+) -> Result<crate::services::mi_unlock::UnlockResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::mi_unlock::perform_unlock(&session, &region, &product, &device_token)
+    })
+    .await
+    .map_err(|e| format!("Unlock task failed: {e}"))?
 }
