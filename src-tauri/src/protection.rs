@@ -197,6 +197,7 @@ mod win {
         c.wrapping_sub(0xFFFF) == 0
     }
 
+    #[allow(unused_unsafe)]
     fn check_vm() -> bool {
         #[cfg(target_arch = "x86_64")]
         unsafe {
