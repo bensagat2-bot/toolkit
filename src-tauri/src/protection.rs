@@ -91,7 +91,7 @@ mod win {
         #[cfg(target_arch = "x86_64")]
         unsafe {
             let mut peb: *mut std::ffi::c_void;
-            std::arch::asm!("mov {}, gs:[0x60]", out(reg) peb, options(nostack, att_syntax));
+            std::arch::asm!("mov {}, gs:0x60", out(reg) peb, options(nostack, att_syntax));
             let flag = *(peb.add(0x2) as *const u8);
             flag & 1 != 0
         }
