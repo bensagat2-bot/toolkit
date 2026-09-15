@@ -641,7 +641,6 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
         }
     };
     let use_folk = mgr == "folkpatch";
-
     emit(&app, "Checking ADB Connection...");
     let serial = match ready_adb_device() {
         Ok(s) => {
@@ -698,20 +697,23 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     }
     emit(&app, format!("Installing [{}] on device... DONE", manager_label).as_str());
 
-    // FolkPatch can only patch boot.img; KernelSU-Next handles init_boot too.
-    if use_folk {
-        let n = boot_img.file_name().map(|f| f.to_string_lossy().to_lowercase()).unwrap_or_default();
-        if n.contains("init_boot") {
-            return Err("FolkPatch needs boot.img, not init_boot.img.".into());
-        }
-    }
     let part_name = partition_from_image(boot_img);
 
+    // Only ksud-based managers (ksu-next, ksu) can handle init_boot
+    if mgr == "folkpatch" || mgr == "sukisu" {
+        let n = boot_img.file_name().map(|f| f.to_string_lossy().to_lowercase()).unwrap_or_default();
+        if n.contains("init_boot") {
+            return Err(format!("{} needs boot.img, not init_boot.img.", manager_label));
+        }
+    }
+
     emit(&app, "Patching boot image...");
-    let patched_local = if use_folk {
-        auto_patch_folkpatch(&app, &serial, &work, boot_img.to_string_lossy().as_ref())?
-    } else {
-        auto_patch_ksud(&app, &serial, &work, boot_img.to_string_lossy().as_ref(), &release, &abi)?
+    let patched_local = match mgr {
+        "folkpatch" => auto_patch_folkpatch(&app, &serial, &work, boot_img.to_string_lossy().as_ref())?,
+        "sukisu" => auto_patch_kptools(&app, &serial, &work, boot_img.to_string_lossy().as_ref(),
+            "https://api.github.com/repos/SukiSU-Ultra/SukiSU_KernelPatch_patch/releases/latest",
+            "kpimg")?,
+        _ => auto_patch_ksud(&app, &serial, &work, boot_img.to_string_lossy().as_ref(), &release, &abi)?,
     };
     let Some(patched_local) = patched_local else {
         return Err("Auto-patch failed.".into());
@@ -736,12 +738,14 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
         "/data/local/tmp/ksud",
         "/data/local/tmp/kptools",
         "/data/local/tmp/kpimg-android",
+        "/data/local/tmp/kpimg",
         "/data/local/tmp/v1per_kp",
         "/data/local/tmp/v1per_input.img",
         "/data/local/tmp/v1per_part.img",
         "/sdcard/Download/v1per_input.img",
         "/sdcard/Download/kernelsu_patched.img",
         "/sdcard/Download/folkpatch_patched.img",
+        "/sdcard/Download/patched_sukisu.img",
     ];
     for path in remote_junk {
         let _ = adb_serial(&serial, &["shell", "rm", "-rf", path], 10000);
@@ -1050,6 +1054,60 @@ let mut fb_serial = match fb_serial {
         return Err("Flash may have failed.".into());
     }
     Ok(())
+}
+
+fn auto_patch_kptools(
+    app: &AppHandle,
+    serial: &str,
+    work: &Path,
+    image_path: &str,
+    release_url: &str,
+    kpimg_name: &str,
+) -> Result<Option<String>, String> {
+    let release = fetch_json(release_url)
+        .ok_or("Failed to fetch KernelPatch release. Check internet.")?;
+    let tools = pick_asset(&release, "kptools-android")
+        .ok_or("No kptools-android in release.")?;
+    let kpimg = pick_asset(&release, kpimg_name)
+        .ok_or("No kpimg in release.")?;
+
+    let tools_local = download_file_into(app, &asset_url(&tools), &asset_name(&tools), work)?;
+    let kpimg_local = download_file_into(app, &asset_url(&kpimg), &asset_name(&kpimg), work)?;
+
+    const REMOTE_BIN: &str = "/data/local/tmp/kptools";
+    const REMOTE_KPIMG: &str = "/data/local/tmp/kpimg";
+    const WORK: &str = "/data/local/tmp/v1per_kp";
+    let remote_in = format!("{WORK}/boot.img");
+    let remote_out = "/sdcard/Download/patched_sukisu.img".to_string();
+
+    adb_serial(serial, &["shell", "rm", "-rf", WORK], 10000);
+    adb_serial(serial, &["shell", "mkdir", "-p", WORK], 10000);
+    adb_serial(serial, &["shell", "mkdir", "-p", "/sdcard/Download"], 10000);
+    adb_serial(serial, &["push", tools_local.to_string_lossy().as_ref(), REMOTE_BIN], 60000);
+    adb_serial(serial, &["push", kpimg_local.to_string_lossy().as_ref(), REMOTE_KPIMG], 60000);
+    adb_serial(serial, &["push", image_path, remote_in.as_str()], 120000);
+    adb_serial(serial, &["shell", "chmod", "755", REMOTE_BIN], 10000);
+    adb_serial(serial, &["shell", "rm", "-f", remote_out.as_str()], 10000);
+
+    emit(app, "Waiting for patched image...");
+    adb_serial(serial, &[
+        "shell", REMOTE_BIN, "-p", "--image", remote_in.as_str(), "--skey", "su",
+        "--kpimg", REMOTE_KPIMG, "--out", remote_out.as_str(),
+    ], 180000);
+
+    let exists = adb_serial(serial, &["shell", "ls", remote_out.as_str()], 10000);
+    if exists.trim().is_empty() || exists.to_lowercase().contains("no such") {
+        return Err("kptools did not produce a patched image.".into());
+    }
+
+    let patched_local = work.join("patched_boot.img");
+    adb_serial(serial, &["pull", remote_out.as_str(), patched_local.to_string_lossy().as_ref()], 120000);
+    let ok = std::fs::metadata(&patched_local).map(|m| m.len() >= 4096).unwrap_or(false);
+    if !ok {
+        return Err("Failed to pull patched image.".into());
+    }
+    emit(app, "Patching boot image... DONE");
+    Ok(Some(patched_local.to_string_lossy().into_owned()))
 }
 
 // ── AnyKernel ────────────────────────────────────────────────
