@@ -3,6 +3,9 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 
 use base64::Engine;
+use digest::{Digest, KeyInit};
+use hmac::Mac;
+use md5::Md5;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -500,7 +503,7 @@ pub fn perform_unlock(
         "deviceToken": device_token,
         "language": "en",
         "operate": "unlock",
-        "pcId": format!("{:x}", md5_hash(&session.deviceId)),
+        "pcId": md5_hash(&session.deviceId),
         "region": region.region,
         "uid": session.userId,
     });
@@ -539,8 +542,8 @@ pub fn perform_unlock(
 }
 
 fn md5_hash(s: &str) -> String {
-    let digest = md5::compute(s.as_bytes());
-    format!("{:x}", digest)
+    let result = Md5::digest(s.as_bytes());
+    format!("{:x}", result)
 }
 
 fn apply_unlock(encrypt_data_hex: &str) -> Result<(), String> {
