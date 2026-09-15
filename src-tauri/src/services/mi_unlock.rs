@@ -20,8 +20,8 @@ fn rand_str(len: usize) -> String {
 }
 
 fn hmac_sha1_base64(key: &str, data: &str) -> String {
-    let mut mac =
-        hmac::Hmac::<sha1::Sha1>::new_from_slice(key.as_bytes()).expect("HMAC key");
+    let mut mac: hmac::Hmac<sha1::Sha1> =
+        KeyInit::new_from_slice(key.as_bytes()).expect("HMAC key");
     mac.update(data.as_bytes());
     let result = mac.finalize().into_bytes();
     base64::engine::general_purpose::STANDARD.encode(result)
