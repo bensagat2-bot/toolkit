@@ -1064,14 +1064,20 @@ fn auto_patch_kptools(
     release_url: &str,
     kpimg_name: &str,
 ) -> Result<Option<String>, String> {
-    let release = fetch_json(release_url)
+    // SukiSU's kptools lacks unpack/repack commands, so we use the original
+    // KernelPatch kptools (bmax121/KernelPatch) for unpack/repack and use
+    // SukiSU's kpimg for the actual kernel patching.
+    let kp_release = fetch_json("https://api.github.com/repos/bmax121/KernelPatch/releases/latest")
         .ok_or("Failed to fetch KernelPatch release. Check internet.")?;
-    let tools = pick_asset(&release, "kptools-android")
-        .ok_or("No kptools-android in release.")?;
-    let kpimg = pick_asset(&release, kpimg_name)
-        .ok_or("No kpimg in release.")?;
+    let kp_tools = pick_asset(&kp_release, "kptools-android")
+        .ok_or("No kptools-android in KernelPatch release.")?;
+    let tools_local = download_file_into(app, &asset_url(&kp_tools), &asset_name(&kp_tools), work)?;
 
-    let tools_local = download_file_into(app, &asset_url(&tools), &asset_name(&tools), work)?;
+    // Download SukiSU's kpimg
+    let sk_release = fetch_json(release_url)
+        .ok_or("Failed to fetch SukiSU KernelPatch release. Check internet.")?;
+    let kpimg = pick_asset(&sk_release, kpimg_name)
+        .ok_or("No kpimg in SukiSU release.")?;
     let kpimg_local = download_file_into(app, &asset_url(&kpimg), &asset_name(&kpimg), work)?;
 
     const REMOTE_BIN: &str = "/data/local/tmp/kptools";
@@ -1097,6 +1103,7 @@ fn auto_patch_kptools(
     }
 
     emit(app, "Patching kernel...");
+    // Use SukiSU's kpimg with the original kptools (same kptools interface)
     adb_serial(serial, &[
         "shell", REMOTE_BIN, "-p", "--image", kernel_path.as_str(),
         "--skey", "su", "--kpimg", REMOTE_KPIMG, "--out", format!("{WORK}/kernel.new").as_str(),

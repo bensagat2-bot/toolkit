@@ -143,7 +143,8 @@
                   </button>
                 </div>
                 <div class="link-note" v-if="revealedCode">
-                  Password: <strong>{{ revealedCode }}</strong>
+                  Password: <strong :class="{ blurred: !showPassword }" @click="showPassword = !showPassword">{{ revealedCode }}</strong>
+                  <span class="reveal-hint">(click to {{ showPassword ? 'hide' : 'reveal' }})</span>
                 </div>
               </div>
 
@@ -267,6 +268,7 @@ const linkRevealed = ref(false)
 const processingOrder = ref(false)
 const revealedLink = ref('')
 const revealedCode = ref('')
+const showPassword = ref(false)
 const errorMsg = ref('')
 const showError = ref(false)
 const showExtract = ref(false)
@@ -695,6 +697,9 @@ onBeforeUnmount(() => {
 .link-available { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; .btn { width: 100%; } }
 .purchase-actions { display: flex; flex-direction: column; gap: 8px; width: 100%; .btn { width: 100%; } }
 .link-note { font-size: 12px; color: var(--text-secondary); strong { font-family: monospace; color: var(--accent-primary); } }
+.link-note .blurred { filter: blur(6px); cursor: pointer; user-select: none; transition: filter 0.2s; }
+.link-note .blurred:hover { filter: blur(4px); }
+.reveal-hint { font-size: 10px; opacity: 0.6; margin-left: 6px; cursor: pointer; }
 .btn-primary.clicked { animation: btnPulse 0.3s ease; }
 @keyframes btnPulse { 0% { transform: scale(1); } 50% { transform: scale(0.96); } 100% { transform: scale(1); } }
 .no-link-msg { font-size: 12px; color: var(--text-secondary); text-align: center; }
