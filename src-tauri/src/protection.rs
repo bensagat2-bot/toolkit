@@ -88,14 +88,19 @@ mod win {
     }
 
     fn check_peb_flag() -> bool {
-        #[cfg(target_arch = "x86_64")]
-        unsafe {
-            let peb = std::arch::x86_64::__readgsqword(0x60) as *mut std::ffi::c_void;
-            let flag = *(peb.add(0x2) as *const u8);
-            flag & 1 != 0
-        }
-        #[cfg(not(target_arch = "x86_64"))]
-        { false }
+        let Some(ptr) = resolve_ntdll("NtQueryInformationProcess") else { return false };
+        let func: NtQueryInfoProc = unsafe { std::mem::transmute(ptr) };
+        let mut info = [0u8; 48];
+        let mut ret_len: u32 = 0;
+        let status = unsafe {
+            func(GetCurrentProcess(), 0, info.as_mut_ptr() as *mut _,
+                48, &mut ret_len)
+        };
+        if status != 0 { return false; }
+        let peb_ptr = unsafe { *(info.as_ptr().add(8) as *const *mut std::ffi::c_void) };
+        if peb_ptr.is_null() { return false; }
+        let flag = unsafe { *(peb_ptr.add(0x2) as *const u8) };
+        flag & 1 != 0
     }
 
     fn check_hw_breakpoints() -> bool {
