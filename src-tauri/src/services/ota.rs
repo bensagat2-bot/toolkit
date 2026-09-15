@@ -6,12 +6,11 @@ use flate2::read::GzDecoder;
 use reqwest::blocking::Client;
 use serde::Serialize;
 
-use crate::config::OTA_MIRROR_HOST;
+use crate::config;
 
 const BLOCK_SIZE: u64 = 4096;
 const PAYLOAD_MEMBER: &str = "payload.bin";
 const READAHEAD: u64 = 8 * 1024 * 1024;
-// Parallel range workers + prefetch count (mirrors ota_extract.py).
 const WORKERS: usize = 8;
 const PREFETCH: u64 = 4;
 
@@ -21,7 +20,7 @@ pub fn mirror_url(url: &str) -> String {
             let scheme = &url[..colon + 3];
             let rest = &url[colon + 3..];
             if let Some(slash) = rest.find('/') {
-                return format!("{scheme}{OTA_MIRROR_HOST}{}", &rest[slash..]);
+                return format!("{scheme}{}{}", config::ota_mirror_host(), &rest[slash..]);
             }
         }
     }

@@ -8,7 +8,7 @@ use flate2::read::DeflateDecoder;
 use reqwest::blocking::Client;
 use serde::Serialize;
 
-use crate::config::PDS_API_BASE as PDS_API;
+use crate::config;
 
 const EOCD_SIGNATURE: u32 = 0x06054b50;
 const ZIP64_EOCD_LOCATOR_SIGNATURE: u32 = 0x07064b50;
@@ -107,7 +107,7 @@ fn get_share_token(c: &Client, share_id: &str, password: &str) -> Result<String,
         body["share_pwd"] = serde_json::json!(password);
     }
     let resp: serde_json::Value = c
-        .post(format!("{PDS_API}/v2/share_link/get_share_token"))
+        .post(format!("{}/v2/share_link/get_share_token", config::pds_api_base()))
         .json(&body)
         .send()
         .map_err(|e| e.to_string())?
@@ -131,7 +131,7 @@ fn list_files(c: &Client, token: &str, share_id: &str, parent_id: &str) -> Resul
         "limit": 100
     });
     let resp: serde_json::Value = c
-        .post(format!("{PDS_API}/v2/file/list"))
+        .post(format!("{}/v2/file/list", config::pds_api_base()))
         .header("x-share-token", token)
         .json(&body)
         .send()
@@ -186,7 +186,7 @@ fn list_all_recursive(c: &Client, token: &str, share_id: &str, parent_id: &str, 
 fn get_download_url(c: &Client, token: &str, share_id: &str, file_id: &str) -> Result<String, String> {
     let body = serde_json::json!({ "share_id": share_id, "file_id": file_id });
     let resp: serde_json::Value = c
-        .post(format!("{PDS_API}/v2/file/get_download_url"))
+        .post(format!("{}/v2/file/get_download_url", config::pds_api_base()))
         .header("x-share-token", token)
         .json(&body)
         .send()

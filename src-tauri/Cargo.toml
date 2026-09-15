@@ -37,6 +37,8 @@ flate2 = "1"
 xz2 = "0.1"
 bzip2 = "0.4"
 base64 = "0.22"
+obfstr = "0.4"
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 
