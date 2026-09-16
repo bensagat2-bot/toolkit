@@ -7,9 +7,10 @@
         <div class="term-actions">
           <button class="btn-link" @click="clearLog" :disabled="busy">Clear</button>
           <button class="btn-link" @click="copyLog" :disabled="busy">Copy</button>
+          <button class="btn-link" @click="browseFile" :disabled="busy">Browse</button>
         </div>
       </div>
-      <div class="term-body" ref="bodyRef" @drop.prevent="onHtmlDrop" @dragover.prevent="onDragOver" @dragleave.prevent="onDragLeave" :class="{ 'drag-over': dragOver }">
+      <div class="term-body" ref="bodyRef">
         <div v-for="(line, i) in lines" :key="i" :class="['term-line', line.kind]">
           <template v-if="line.kind === 'cmd'">
             <span class="prompt">$ v1per&gt;</span>
@@ -49,7 +50,6 @@ const lines = ref([])
 const busy = ref(false)
 const history = ref([])
 const historyIndex = ref(-1)
-const dragOver = ref(false)
 const deviceStatus = ref('') // '', 'adb', 'fastboot', or device serial info
 let unlistenDragDrop = null
 
@@ -108,7 +108,6 @@ function historyNext() {
 }
 
 function onDropPaths(paths) {
-  dragOver.value = false
   const quoted = paths.map((p) => `"${p}"`).join(' ')
   current.value = current.value ? `${current.value} ${quoted}` : quoted
   focusInput()
@@ -139,6 +138,16 @@ function onDragOver() {
 
 function onDragLeave() {
   dragOver.value = false
+}
+
+async function browseFile() {
+  const { showSelectDialog } = await import("@renderer/utils/ipc")
+  const result = await showSelectDialog({ title: "Select file", filters: [] })
+  if (result.filePaths?.length) {
+    const quoted = result.filePaths.map((p) => `"${p}"`).join(" ")
+    current.value = current.value ? `${current.value} ${quoted}` : quoted
+    focusInput()
+  }
 }
 
 async function runCommand() {
@@ -198,11 +207,7 @@ onMounted(async () => {
   const { listen } = await import('@tauri-apps/api/event')
   unlistenDragDrop = await listen('tauri://drag-drop', (event) => {
     const payload = event.payload
-    if (payload.type === 'over') {
-      dragOver.value = true
-    } else if (payload.type === 'leave') {
-      dragOver.value = false
-    } else if (payload.type === 'drop') {
+    if (payload.type === 'drop') {
       onDropPaths(payload.paths)
     }
   })
