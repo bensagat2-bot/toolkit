@@ -61,33 +61,36 @@ mod win {
     static NDE:  std::sync::OnceLock<Option<NtDE>>  = std::sync::OnceLock::new();
 
     fn nqip() -> Option<NtQIP> {
-        NQIP.get_or_init(|| {
-            let p = obf(obl!("NtQueryInformationProcess"))?;
-            Some(unsafe { std::mem::transmute::<*const (), NtQIP>(p) })
-        }).copied()
+        if let Some(Some(f)) = NQIP.get() { return Some(*f); }
+        let p = obf(obl!("NtQueryInformationProcess"))?;
+        let f = Some(unsafe { std::mem::transmute::<*const (), NtQIP>(p) });
+        let _ = NQIP.set(f);
+        f
     }
     fn nsit() -> Option<NtSIT> {
-        NSIT.get_or_init(|| {
-            let p = obf(obl!("NtSetInformationThread"))?;
-            Some(unsafe { std::mem::transmute::<*const (), NtSIT>(p) })
-        }).copied()
+        if let Some(Some(f)) = NSIT.get() { return Some(*f); }
+        let p = obf(obl!("NtSetInformationThread"))?;
+        let f = Some(unsafe { std::mem::transmute::<*const (), NtSIT>(p) });
+        let _ = NSIT.set(f);
+        f
     }
     fn nde() -> Option<NtDE> {
-        NDE.get_or_init(|| {
-            let p = obf(obl!("NtDelayExecution"))?;
-            Some(unsafe { std::mem::transmute::<*const (), NtDE>(p) })
-        }).copied()
+        if let Some(Some(f)) = NDE.get() { return Some(*f); }
+        let p = obf(obl!("NtDelayExecution"))?;
+        let f = Some(unsafe { std::mem::transmute::<*const (), NtDE>(p) });
+        let _ = NDE.set(f);
+        f
     }
 
     fn check_debug_port() -> bool {
-        let f = nqip()?;
+        let f = match nqip() { Some(x) => x, None => return false };
         let mut p: i32 = 0;
         let mut r: u32 = 0;
         unsafe { f(GetCurrentProcess(), 7, &mut p as *mut _ as *mut _, 4, &mut r) == 0 && p != 0 }
     }
 
     fn check_debug_object() -> bool {
-        let f = nqip()?;
+        let f = match nqip() { Some(x) => x, None => return false };
         let mut h: *mut std::ffi::c_void = std::ptr::null_mut();
         let mut r: u32 = 0;
         unsafe {
@@ -97,14 +100,14 @@ mod win {
     }
 
     fn check_debug_flags() -> bool {
-        let f = nqip()?;
+        let f = match nqip() { Some(x) => x, None => return false };
         let mut g: i32 = 1;
         let mut r: u32 = 0;
         unsafe { f(GetCurrentProcess(), 0x1F, &mut g as *mut _ as *mut _, 4, &mut r) == 0 && g == 0 }
     }
 
     fn check_peb_flag() -> bool {
-        let f = nqip()?;
+        let f = match nqip() { Some(x) => x, None => return false };
         let mut i = [0u8; 48];
         let mut r: u32 = 0;
         let s = unsafe { f(GetCurrentProcess(), 0, i.as_mut_ptr() as *mut _, 48, &mut r) };
@@ -138,7 +141,7 @@ mod win {
 
     fn check_timing() -> bool {
         use std::time::{Duration, Instant};
-        let f = nde()?;
+        let f = match nde() { Some(x) => x, None => return false };
         let iv: i64 = -10000;
         let st = Instant::now();
         unsafe { let _ = f(false, &iv as *const _ as *mut i64); }
@@ -215,7 +218,7 @@ mod win {
     }
 
     fn anti_dump_peb() {
-        let f = match nqip() { Some(f) => f, None => return };
+        let f = match nqip() { Some(x) => x, None => return };
         let mut i = [0u8; 48];
         let mut r: u32 = 0;
         unsafe {
