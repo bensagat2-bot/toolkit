@@ -12,6 +12,7 @@
   "app": {
     "windows": [
 {
+    "dragDropEnabled": false,
     "title": "V1Per Servicing Toolkit",
     "width": 1200,
     "height": 800,

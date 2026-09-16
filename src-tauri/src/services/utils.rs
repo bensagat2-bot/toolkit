@@ -951,6 +951,7 @@ fn auto_patch_folkpatch(app: &AppHandle, serial: &str, work: &Path, image_path: 
     const REMOTE_KPIMG: &str = "/data/local/tmp/kpimg-android";
     const WORK: &str = "/data/local/tmp/v1per_kp";
     let remote_in = format!("{WORK}/boot.img");
+    let remote_out = "/sdcard/Download/folkpatch_patched.img".to_string();
 
     adb_serial(serial, &["shell", "rm", "-rf", WORK], 10000);
     adb_serial(serial, &["shell", "mkdir", "-p", WORK], 10000);
@@ -959,33 +960,19 @@ fn auto_patch_folkpatch(app: &AppHandle, serial: &str, work: &Path, image_path: 
     adb_serial(serial, &["push", kpimg_local.to_string_lossy().as_ref(), REMOTE_KPIMG], 60000);
     adb_serial(serial, &["push", image_path, remote_in.as_str()], 120000);
     adb_serial(serial, &["shell", "chmod", "755", REMOTE_BIN], 10000);
+    adb_serial(serial, &["shell", "rm", "-f", remote_out.as_str()], 10000);
 
-    emit(app, "Unpacking boot image...");
-    adb_serial(serial, &["shell", "sh", "-c", format!("cd {WORK} && {REMOTE_BIN} unpack boot.img").as_str()], 60000);
-    let kernel_path = format!("{WORK}/kernel");
-    let has_kernel = adb_serial(serial, &["shell", "ls", kernel_path.as_str()], 10000);
-    if has_kernel.trim().is_empty() || has_kernel.to_lowercase().contains("no such") {
-        return Err("kptools did not unpack a kernel from boot.img.".into());
-    }
-
-    emit(app, "Patching kernel with FolkPatch...");
+    // Direct single-step patch: kptools -p detects ANDROID! magic, extracts kernel,
+    // patches it with kpimg, and repacks automatically.
+    emit(app, "Waiting for patched image...");
     adb_serial(serial, &[
-        "shell", REMOTE_BIN, "-p", "--image", kernel_path.as_str(), "--skey", "su",
-        "--kpimg", REMOTE_KPIMG, "--out", kernel_path.as_str(),
+        "shell", REMOTE_BIN, "-p", "--image", remote_in.as_str(), "--skey", "su",
+        "--kpimg", REMOTE_KPIMG, "--out", remote_out.as_str(),
     ], 180000);
 
-    let patched_check = adb_serial(serial, &["shell", "ls", kernel_path.as_str()], 10000);
-    if patched_check.trim().is_empty() || patched_check.to_lowercase().contains("no such") {
-        return Err("kptools did not produce a patched kernel.".into());
-    }
-
-    emit(app, "Repacking boot image...");
-    adb_serial(serial, &["shell", "sh", "-c", format!("cd {WORK} && {REMOTE_BIN} repack boot.img").as_str()], 60000);
-
-    let mut remote_out = format!("{WORK}/new-boot.img");
-    let listed = adb_serial(serial, &["shell", "ls", remote_out.as_str()], 10000);
-    if listed.trim().is_empty() || listed.to_lowercase().contains("no such") {
-        remote_out = format!("{WORK}/boot.img");
+    let exists = adb_serial(serial, &["shell", "ls", remote_out.as_str()], 10000);
+    if exists.trim().is_empty() || exists.to_lowercase().contains("no such") {
+        return Err("kptools did not produce a patched image.".into());
     }
 
     let patched_local = work.join("patched_boot.img");
@@ -997,7 +984,6 @@ fn auto_patch_folkpatch(app: &AppHandle, serial: &str, work: &Path, image_path: 
     emit(app, "Patching boot image... DONE");
     Ok(Some(patched_local.to_string_lossy().into_owned()))
 }
-
 fn flash_patched(app: &AppHandle, serial: &str, partition: &str, patched_local: &str) -> Result<(), String> {
     emit(app, "Rebooting device to bootloader mode...");
     adb_serial(serial, &["reboot", "bootloader"], 15000);
@@ -1090,16 +1076,14 @@ fn auto_patch_kptools(
     release_url: &str,
     kpimg_name: &str,
 ) -> Result<Option<String>, String> {
-    // SukiSU's kptools lacks unpack/repack commands, so we use the original
-    // KernelPatch kptools (bmax121/KernelPatch) for unpack/repack and use
-    // SukiSU's kpimg for the actual kernel patching.
+    // Download kptools from KernelPatch (has unpack/repack, needed for -p auto mode)
     let kp_release = fetch_json("https://api.github.com/repos/bmax121/KernelPatch/releases/latest")
         .ok_or("Failed to fetch KernelPatch release. Check internet.")?;
     let kp_tools = pick_asset(&kp_release, "kptools-android")
         .ok_or("No kptools-android in KernelPatch release.")?;
     let tools_local = download_file_into(app, &asset_url(&kp_tools), &asset_name(&kp_tools), work)?;
 
-    // Download SukiSU's kpimg (name may vary: kpimg, kpimg-android, etc.)
+    // Download SukiSU's kpimg
     let sk_release = fetch_json(release_url)
         .ok_or("Failed to fetch SukiSU KernelPatch release. Check internet.")?;
     let kpimg = pick_asset_contains(&sk_release, kpimg_name)
@@ -1115,44 +1099,30 @@ fn auto_patch_kptools(
     const REMOTE_BIN: &str = "/data/local/tmp/kptools";
     const REMOTE_KPIMG: &str = "/data/local/tmp/kpimg";
     const WORK: &str = "/data/local/tmp/v1per_kp";
+    let remote_in = format!("{WORK}/boot.img");
+    let remote_out = "/sdcard/Download/patched_sukisu.img".to_string();
 
     adb_serial(serial, &["shell", "rm", "-rf", WORK], 10000);
     adb_serial(serial, &["shell", "mkdir", "-p", WORK], 10000);
     adb_serial(serial, &["push", tools_local.to_string_lossy().as_ref(), REMOTE_BIN], 60000);
     adb_serial(serial, &["push", kpimg_local.to_string_lossy().as_ref(), REMOTE_KPIMG], 60000);
-    adb_serial(serial, &["push", image_path, format!("{WORK}/boot.img").as_str()], 120000);
+    adb_serial(serial, &["push", image_path, remote_in.as_str()], 120000);
     adb_serial(serial, &["shell", "chmod", "755", REMOTE_BIN], 10000);
+    adb_serial(serial, &["shell", "rm", "-f", remote_out.as_str()], 10000);
     let _ = std::fs::remove_file(&tools_local);
     let _ = std::fs::remove_file(&kpimg_local);
 
-    emit(app, "Unpacking boot.img...");
-    adb_serial(serial, &["shell", "sh", "-c", format!("cd {WORK} && {REMOTE_BIN} unpack boot.img").as_str()], 60000);
-
-    let kernel_path = format!("{WORK}/kernel");
-    let kernel_check = adb_serial(serial, &["shell", "ls", kernel_path.as_str()], 10000);
-    if kernel_check.trim().is_empty() || kernel_check.to_lowercase().contains("no such") {
-        return Err("kptools did not unpack a kernel from boot.img.".into());
-    }
-
-    emit(app, "Patching kernel...");
-    // Use SukiSU's kpimg with the original kptools (same kptools interface)
+    // Direct single-step patch: kptools -p detects ANDROID! magic, extracts kernel,
+    // patches it with SukiSU's kpimg, and repacks automatically.
+    emit(app, "Waiting for patched image...");
     adb_serial(serial, &[
-        "shell", REMOTE_BIN, "-p", "--image", kernel_path.as_str(),
-        "--skey", "su", "--kpimg", REMOTE_KPIMG, "--out", format!("{WORK}/kernel.new").as_str(),
+        "shell", REMOTE_BIN, "-p", "--image", remote_in.as_str(), "--skey", "su",
+        "--kpimg", REMOTE_KPIMG, "--out", remote_out.as_str(),
     ], 180000);
 
-    let patched_check = adb_serial(serial, &["shell", "ls", format!("{WORK}/kernel.new").as_str()], 10000);
-    if patched_check.trim().is_empty() || patched_check.to_lowercase().contains("no such") {
-        return Err("kptools did not produce a patched kernel.".into());
-    }
-
-    emit(app, "Repacking boot.img...");
-    adb_serial(serial, &["shell", "sh", "-c", format!("cp {WORK}/kernel.new {WORK}/kernel && cd {WORK} && {REMOTE_BIN} repack boot.img").as_str()], 60000);
-
-    let remote_out = format!("{WORK}/new-boot.img");
     let exists = adb_serial(serial, &["shell", "ls", remote_out.as_str()], 10000);
     if exists.trim().is_empty() || exists.to_lowercase().contains("no such") {
-        return Err("kptools did not produce new-boot.img after repack.".into());
+        return Err("kptools did not produce a patched image.".into());
     }
 
     let patched_local = work.join("patched_boot.img");
@@ -1164,7 +1134,6 @@ fn auto_patch_kptools(
     emit(app, "Patching boot image... DONE");
     Ok(Some(patched_local.to_string_lossy().into_owned()))
 }
-
 // ── Scrcpy ──────────────────────────────────────────────────
 
 fn scrcpy_running() -> bool {

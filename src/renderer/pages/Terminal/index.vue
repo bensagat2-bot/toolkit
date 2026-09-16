@@ -10,7 +10,7 @@
           <button class="btn-link" @click="browseFile" :disabled="busy">Browse</button>
         </div>
       </div>
-      <div class="term-body" ref="bodyRef">
+      <div class="term-body" ref="bodyRef" @drop.prevent="onHtmlDrop">
         <div v-for="(line, i) in lines" :key="i" :class="['term-line', line.kind]">
           <template v-if="line.kind === 'cmd'">
             <span class="prompt">$ v1per&gt;</span>
@@ -138,6 +138,19 @@ function onDragOver() {
 
 function onDragLeave() {
   dragOver.value = false
+}
+
+function onHtmlDrop(e) {
+  const files = e.dataTransfer?.files
+  if (files?.length) {
+    const paths = Array.from(files).map((f) => f.path).filter(Boolean)
+    if (paths.length) {
+      onDropPaths(paths)
+      return
+    }
+  }
+  // fallback: open native file dialog
+  browseFile()
 }
 
 async function browseFile() {
