@@ -88,7 +88,7 @@ async function submit() {
   if (isLogin.value) {
     loading.value = true
     try {
-      await store.login(password.value)
+      await store.login(username.value, password.value)
     } catch (e: any) {
       error.value = e?.message || 'Sign in failed. Check your connection.'
       loading.value = false

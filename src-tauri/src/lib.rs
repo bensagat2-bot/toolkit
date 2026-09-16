@@ -48,6 +48,9 @@ pub fn run() {
         .setup(|_app| {
             // Prune tool caches left behind by older app versions.
             resources::prune_old_caches();
+            // Eagerly extract embedded tools so adb/fastboot are ready on first use.
+            resources::ensure_tool_dir("platform-tools");
+            resources::ensure_tool_dir("scrcpy");
             // Legacy layout fallback: tools next to the exe (bundle resources).
             let bundle = resources::bundle_dir();
             services::unisoc::set_resource_dir(bundle.clone());

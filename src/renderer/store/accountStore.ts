@@ -217,13 +217,14 @@ export const useAccountStore = defineStore('account', () => {
     return account.value
   }
 
-  async function login(password: string) {
+  async function login(username: string, password: string) {
     const hwid = await getHwidCached()
     const pcInfo = await getPcInfoCached()
     const res = await fetch(`${API_BASE}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        username,
         hwid,
         password,
         machine_guid: pcInfo.machine_guid || undefined,

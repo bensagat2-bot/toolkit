@@ -9,7 +9,7 @@
           <button class="btn-link" @click="copyLog" :disabled="busy">Copy</button>
         </div>
       </div>
-      <div class="term-body" ref="bodyRef" @drop.prevent="onHtmlDrop" @dragover.prevent="onDragOver" @dragleave.prevent="onDragLeave" :class="{ 'drag-over': dragOver }">
+      <div class="term-body" ref="bodyRef" :class="{ 'drag-over': dragOver }">
         <div v-for="(line, i) in lines" :key="i" :class="['term-line', line.kind]">
           <template v-if="line.kind === 'cmd'">
             <span class="prompt">$ v1per&gt;</span>
@@ -114,23 +114,6 @@ function onDropPaths(paths) {
   focusInput()
 }
 
-function onHtmlDrop(e) {
-  dragOver.value = false
-  const files = e.dataTransfer?.files
-  if (files?.length) {
-    const paths = Array.from(files).map((f) => f.path)
-    onDropPaths(paths)
-  }
-}
-
-function onDragOver() {
-  dragOver.value = true
-}
-
-function onDragLeave() {
-  dragOver.value = false
-}
-
 async function runCommand() {
   let cmd = current.value.trim()
   if (!cmd || busy.value) return
@@ -187,7 +170,11 @@ onMounted(async () => {
   await rendererOn('term:output', onOutput)
   const { getCurrentWindow } = await import('@tauri-apps/api/window')
   unlistenDragDrop = await getCurrentWindow().onDragDropEvent((event) => {
-    if (event.payload.type === 'drop') {
+    if (event.payload.type === 'over') {
+      dragOver.value = true
+    } else if (event.payload.type === 'leave') {
+      dragOver.value = false
+    } else if (event.payload.type === 'drop') {
       onDropPaths(event.payload.paths)
     }
   })
