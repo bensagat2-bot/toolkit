@@ -124,23 +124,19 @@ function onDragLeave() {
 }
 
 function onHtmlDrop(e) {
-  // Try multiple path extraction methods
-  let paths = []
-  // 1. file.path (works in some WebView2/Chrome configs)
   const files = e.dataTransfer?.files
   if (files?.length) {
-    paths = Array.from(files).map((f) => f.path).filter(Boolean)
-    if (paths.length) { onDropPaths(paths); return }
-  }
-  // 2. getData('text') - Windows shell sometimes drops path as text
-  const text = e.dataTransfer?.getData('text')
-  if (text && /^[a-zA-Z]:\\/.test(text)) {
-    onDropPaths([text]); return
-  }
-  // 3. insert file name at cursor as placeholder
-  if (files?.length) {
-    push('info', 'Drag-drop path unavailable. Use Browse button or type path manually.')
-    current.value = current.value ? `${current.value} ${files[0].name}` : files[0].name
+    // 1. file.path - works in some WebView2/Chrome configs
+    const mapped = Array.from(files).map((f) => f.path).filter(Boolean)
+    if (mapped.length) { onDropPaths(mapped); return }
+    // 2. getData('text') - Windows shell sometimes drops path as text
+    const text = e.dataTransfer?.getData('text')
+    if (text && /^[a-zA-Z]:\\/.test(text)) { onDropPaths([text]); return }
+    // 3. resolve via IPC: search common dirs for the filename
+    sendIpcToMain('resolve_dropped_file', { name: files[0].name }).then((resolved) => {
+      if (resolved) { onDropPaths([resolved]) }
+      else { push('info', 'File not found in common directories. Use Browse button.') }
+    })
   }
 }
 

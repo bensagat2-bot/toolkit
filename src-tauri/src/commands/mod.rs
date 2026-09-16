@@ -567,3 +567,8 @@ pub async fn miunlock_perform_unlock(
     .await
     .map_err(|e| format!("Unlock task failed: {e}"))?
 }
+
+#[command]
+pub fn resolve_dropped_file(name: String) -> Option<String> {
+    crate::services::utils::resolve_dropped_file(name)
+}

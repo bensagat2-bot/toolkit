@@ -112,6 +112,7 @@ pub fn run() {
             commands::utils_force_fastboot,
             commands::utils_scrcpy,
             commands::term_run,
+            commands::resolve_dropped_file,
             commands::check_fastboot_driver,
             commands::ensure_su_access,
             commands::backup_list,

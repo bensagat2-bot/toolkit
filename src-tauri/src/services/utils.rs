@@ -1461,6 +1461,31 @@ fn in_fastboot_mode_or_gone(port_name: &str) -> bool {
     false
 }
 
+// ── File resolution for drag-drop ─────────────────────────
+
+/// Given a filename (e.g. "boot.img"), searches common directories
+/// (Downloads, Desktop, Documents) and the current directory for a match.
+/// Returns the first full path found, or None.
+pub fn resolve_dropped_file(name: String) -> Option<String> {
+    let dirs = vec![
+        std::env::current_dir().ok(),
+        dirs::download_dir(),
+        dirs::desktop_dir(),
+        dirs::document_dir(),
+    ];
+    for dir in dirs.into_iter().flatten() {
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                if let Ok(file_type) = entry.file_type() {
+                    if file_type.is_file() && entry.file_name().to_string_lossy() == name {
+                        return Some(entry.path().to_string_lossy().into_owned());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
 // ── Terminal ─────────────────────────────────────────────────
 
 /// Emits one terminal output line to the renderer.
