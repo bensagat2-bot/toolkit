@@ -43,16 +43,6 @@ pub fn run() {
     #[cfg(windows)]
     ensure_admin();
 
-    // Background integrity watchdog - checks every 30s (log only, no kill)
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(std::time::Duration::from_secs(30));
-            if !protection::integrity_ok() {
-                log::write("Integrity check failed - possible modification detected");
-            }
-        }
-    });
-
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|_app| {
