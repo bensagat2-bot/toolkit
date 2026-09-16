@@ -147,8 +147,7 @@ pub fn run_output(cmd: &mut Command, timeout_ms: u64) -> std::process::Output {
     // stdout. Both streams are piped and merged so callers see the real output.
     let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
     let _stdout_reader = std::thread::spawn(move || {
-        use std::io::Read;
-        let mut buf = Vec::new();
+            let mut buf = Vec::new();
         let mut chunk = [0u8; 8192];
         loop {
             match stdout.read(&mut chunk) {
@@ -161,8 +160,7 @@ pub fn run_output(cmd: &mut Command, timeout_ms: u64) -> std::process::Output {
     });
     let (tx2, rx2) = std::sync::mpsc::channel::<Vec<u8>>();
     let _stderr_reader = std::thread::spawn(move || {
-        use std::io::Read;
-        let mut buf = Vec::new();
+            let mut buf = Vec::new();
         let mut chunk = [0u8; 8192];
         loop {
             match stderr.read(&mut chunk) {
@@ -904,9 +902,14 @@ fn auto_patch_ksud(
     image_path: &str,
     release: &serde_json::Value,
     abi: &str,
+    local_ksud: Option<PathBuf>,
 ) -> Result<Option<String>, String> {
-    let ksud = pick_ksud(release, abi).ok_or("No on-device ksud in this release.")?;
-    let ksud_local = download_file_into(app, &asset_url(&ksud), &asset_name(&ksud), work)?;
+    let ksud_local = if let Some(local) = local_ksud {
+        local
+    } else {
+        let ksud = pick_ksud(release, abi).ok_or("No on-device ksud in this release.")?;
+        download_file_into(app, &asset_url(&ksud), &asset_name(&ksud), work)?
+    };
 
     const REMOTE_KSUD: &str = "/data/local/tmp/ksud";
     const REMOTE_IN: &str = "/sdcard/Download/v1per_input.img";
@@ -1566,8 +1569,7 @@ pub fn term_run(app: AppHandle, command: &str) -> Result<bool, String> {
     if let Some(mut out) = stdout.take() {
         let app_stdout = app.clone();
         std::thread::spawn(move || {
-            use std::io::Read;
-            let mut buf = [0u8; 4096];
+                    let mut buf = [0u8; 4096];
             let mut carry = String::new();
             loop {
                 match out.read(&mut buf) {
@@ -1595,8 +1597,7 @@ pub fn term_run(app: AppHandle, command: &str) -> Result<bool, String> {
     if let Some(mut err) = stderr.take() {
         let app_stderr = app.clone();
         std::thread::spawn(move || {
-            use std::io::Read;
-            let mut buf = [0u8; 4096];
+                    let mut buf = [0u8; 4096];
             let mut carry = String::new();
             loop {
                 match err.read(&mut buf) {
