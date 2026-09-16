@@ -686,6 +686,30 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     emit(&app, format!("ro.build.version.release : {}", release).as_str());
     emit(&app, format!("ro.board.platform : {}", platform).as_str());
 
+    // Xiaomi bootloader lock check: if Xiaomi/Mi/Redmi/POCO and bootloader
+    // is still locked, abort early with a clear message.
+    let lower_model = model.to_lowercase();
+    let is_xiaomi_brand = lower_model.contains("xiaomi")
+        || lower_model.contains("mi ")
+        || lower_model.starts_with("mi ")
+        || lower_model.starts_with("mi")
+        || lower_model.contains("redmi")
+        || lower_model.contains("poco");
+    if is_xiaomi_brand {
+        emit(&app, "Xiaomi device detected, checking bootloader status...");
+        let flash_locked = device_prop(&serial, "ro.boot.flash.locked");
+        let verified = device_prop(&serial, "ro.boot.verifiedbootstate");
+        if flash_locked.trim() == "1" || verified.trim() == "green" {
+            emit(&app, "Xiaomi device detected, checking bootloader status... LOCKED");
+            return Err(
+                "Bootloader is not unlocked yet. Please unlock it manually first.\n\
+                 Xiaomi requires official bootloader unlock via Mi Unlock tool.\n\
+                 This tool cannot unlock Xiaomi bootloaders. Unlock manually, then retry.".into()
+            );
+        }
+        emit(&app, "Xiaomi device detected, checking bootloader status... UNLOCKED");
+    }
+
     let release = fetch_json(release_url).ok_or("Failed to fetch release. Check internet.")?;
     let apk = pick_apk(&release, &[prefer]).ok_or("Failed to fetch release asset.")?;
     let apk_url = asset_url(&apk);
@@ -704,8 +728,8 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
 
     let part_name = partition_from_image(boot_img);
 
-    // Only ksud-based managers (ksu-next, ksu) can handle init_boot
-    if mgr == "folkpatch" || mgr == "sukisu" {
+    // Only ksud-based managers can handle init_boot. FolkPatch needs boot.img.
+    if mgr == "folkpatch" {
         let n = boot_img.file_name().map(|f| f.to_string_lossy().to_lowercase()).unwrap_or_default();
         if n.contains("init_boot") {
             return Err(format!("{} needs boot.img, not init_boot.img.", manager_label));
@@ -715,9 +739,6 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     emit(&app, "Patching boot image...");
     let patched_local = match mgr {
         "folkpatch" => auto_patch_folkpatch(&app, &serial, &work, boot_img.to_string_lossy().as_ref())?,
-        "sukisu" => auto_patch_kptools(&app, &serial, &work, boot_img.to_string_lossy().as_ref(),
-            "https://api.github.com/repos/SukiSU-Ultra/SukiSU_KernelPatch_patch/releases/latest",
-            "kpimg")?,
         _ => auto_patch_ksud(&app, &serial, &work, boot_img.to_string_lossy().as_ref(), &release, &abi)?,
     };
     let Some(patched_local) = patched_local else {
