@@ -359,6 +359,13 @@ fn pick_asset(release: &serde_json::Value, exact: &str) -> Option<serde_json::Va
     release.get("assets")?.as_array()?.iter().find(|a| asset_name(a) == exact).cloned()
 }
 
+fn pick_asset_contains(release: &serde_json::Value, substr: &str) -> Option<serde_json::Value> {
+    let lower = substr.to_lowercase();
+    release.get("assets")?.as_array()?.iter().find(|a| {
+        asset_name(a).to_lowercase().contains(&lower)
+    }).cloned()
+}
+
 fn download_file_into(_app: &AppHandle, url: &str, filename: &str, dir: &Path) -> Result<PathBuf, String> {
     let client = reqwest::blocking::Client::builder()
         .user_agent("V1Per-Toolkit/1.0")
@@ -1068,11 +1075,17 @@ fn auto_patch_kptools(
         .ok_or("No kptools-android in KernelPatch release.")?;
     let tools_local = download_file_into(app, &asset_url(&kp_tools), &asset_name(&kp_tools), work)?;
 
-    // Download SukiSU's kpimg
+    // Download SukiSU's kpimg (name may vary: kpimg, kpimg-android, etc.)
     let sk_release = fetch_json(release_url)
         .ok_or("Failed to fetch SukiSU KernelPatch release. Check internet.")?;
-    let kpimg = pick_asset(&sk_release, kpimg_name)
-        .ok_or("No kpimg in SukiSU release.")?;
+    let kpimg = pick_asset_contains(&sk_release, kpimg_name)
+        .ok_or_else(|| {
+            let names: Vec<String> = sk_release.get("assets")
+                .and_then(|a| a.as_array())
+                .map(|arr| arr.iter().map(asset_name).collect())
+                .unwrap_or_default();
+            format!("No kpimg asset in SukiSU release. Found: {:?}", names)
+        })?;
     let kpimg_local = download_file_into(app, &asset_url(&kpimg), &asset_name(&kpimg), work)?;
 
     const REMOTE_BIN: &str = "/data/local/tmp/kptools";
@@ -1433,9 +1446,23 @@ fn emit_term(app: &AppHandle, line: &str) {
 }
 
 /// Splits a command line into a program + args, honoring double quotes so a
-/// drag-dropped file path with spaces survives intact.
+/// drag-dropped file path with spaces survives intact. Also detects bare
+/// Windows drive-letter paths (e.g. C:\Users\My PC\...) and joins their
+/// segments so spaces in file paths do not cause incorrect splits.
 fn split_command(input: &str) -> Vec<String> {
-    let mut parts = Vec::new();
+    fn is_drive_path_start(s: &str) -> bool {
+        let bytes = s.as_bytes();
+        bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && (bytes[2] == b'\\' || bytes[2] == b'/')
+    }
+    fn is_flag(s: &str) -> bool {
+        s.starts_with('-')
+    }
+
+    // First pass: basic space-split respecting double quotes.
+    let mut raw: Vec<String> = Vec::new();
     let mut current = String::new();
     let mut in_quotes = false;
     for c in input.trim().chars() {
@@ -1443,16 +1470,38 @@ fn split_command(input: &str) -> Vec<String> {
             '"' => in_quotes = !in_quotes,
             ' ' if !in_quotes => {
                 if !current.is_empty() {
-                    parts.push(std::mem::take(&mut current));
+                    raw.push(std::mem::take(&mut current));
                 }
             }
             _ => current.push(c),
         }
     }
     if !current.is_empty() {
-        parts.push(current);
+        raw.push(current);
     }
-    parts
+    if raw.is_empty() {
+        return raw;
+    }
+
+    // Second pass: merge tokens that form a Windows path with spaces.
+    let mut merged: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < raw.len() {
+        if is_drive_path_start(&raw[i]) {
+            let mut combined = raw[i].clone();
+            i += 1;
+            while i < raw.len() && !is_flag(&raw[i]) {
+                combined.push(' ');
+                combined.push_str(&raw[i]);
+                i += 1;
+            }
+            merged.push(combined);
+        } else {
+            merged.push(raw[i].clone());
+            i += 1;
+        }
+    }
+    merged
 }
 
 /// Routes a bare tool name to its bundled/real path.

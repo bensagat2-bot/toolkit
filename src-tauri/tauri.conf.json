@@ -11,16 +11,17 @@
   },
   "app": {
     "windows": [
-      {
-        "title": "V1Per Servicing Toolkit",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 900,
-        "minHeight": 600,
-        "decorations": false,
-        "transparent": false,
-        "resizable": true
-      }
+{
+    "dragDropEnabled": false,
+    "title": "V1Per Servicing Toolkit",
+    "width": 1200,
+    "height": 800,
+    "minWidth": 900,
+    "minHeight": 600,
+    "decorations": false,
+    "transparent": false,
+    "resizable": true
+}
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' data:"
