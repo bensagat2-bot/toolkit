@@ -113,24 +113,7 @@ function onDropPaths(paths) {
   focusInput()
 }
 
-function onHtmlDrop(e) {
-  dragOver.value = false
-  const items = e.dataTransfer?.items
-  if (items?.length) {
-    const paths = Array.from(items).map((i) => i.getAsFile()?.path).filter(Boolean)
-    if (paths.length) {
-      onDropPaths(paths)
-      return
-    }
-  }
-  const files = e.dataTransfer?.files
-  if (files?.length) {
-    const paths = Array.from(files).map((f) => f.path).filter(Boolean)
-    if (paths.length) {
-      onDropPaths(paths)
-    }
-  }
-}
+
 
 function onDragOver() {
   dragOver.value = true
