@@ -711,6 +711,15 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     }
 
     let release = fetch_json(release_url).ok_or("Failed to fetch release. Check internet.")?;
+    // For SukiSU, fetch a separate release (KernelSU-Next) for the ksud binary,
+    // since SukiSU's own release does not include ksud.
+    let ksud_release = if mgr == "sukisu" {
+        Some(fetch_json("https://api.github.com/repos/KernelSU-Next/KernelSU-Next/releases/latest")
+            .ok_or("Failed to fetch KernelSU-Next release for ksud binary. Check internet.")?)
+    } else {
+        None
+    };
+    let patch_release = ksud_release.as_ref().unwrap_or(&release);
     let apk = pick_apk(&release, &[prefer]).ok_or("Failed to fetch release asset.")?;
     let apk_url = asset_url(&apk);
     let apk_name = asset_name(&apk);
@@ -739,7 +748,7 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     emit(&app, "Patching boot image...");
     let patched_local = match mgr {
         "folkpatch" => auto_patch_folkpatch(&app, &serial, &work, boot_img.to_string_lossy().as_ref())?,
-        _ => auto_patch_ksud(&app, &serial, &work, boot_img.to_string_lossy().as_ref(), &release, &abi)?,
+        _ => auto_patch_ksud(&app, &serial, &work, boot_img.to_string_lossy().as_ref(), patch_release, &abi)?,
     };
     let Some(patched_local) = patched_local else {
         return Err("Auto-patch failed.".into());

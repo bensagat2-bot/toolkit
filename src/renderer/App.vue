@@ -39,6 +39,9 @@ onMounted(() => {
   // Pre-warm HWID and PC info caches so login/register don't freeze on PowerShell WMI queries
   sendIpcToMain('get_hwid').catch(() => {})
   sendIpcToMain('get_pc_info').catch(() => {})
+  // Global dragover handler prevents WebView2 from blocking mouse events
+  // during file drag-drop while keeping Tauri's drag-drop event active.
+  document.addEventListener('dragover', (e) => e.preventDefault())
 })
 </script>
 
