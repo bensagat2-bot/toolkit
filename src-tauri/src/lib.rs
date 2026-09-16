@@ -43,13 +43,12 @@ pub fn run() {
     #[cfg(windows)]
     ensure_admin();
 
-    // Background integrity watchdog - checks every 30s
+    // Background integrity watchdog - checks every 30s (log only, no kill)
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(std::time::Duration::from_secs(30));
             if !protection::integrity_ok() {
-                log::write("Integrity check failed - terminating");
-                std::process::exit(0xDEAD);
+                log::write("Integrity check failed - possible modification detected");
             }
         }
     });

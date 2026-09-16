@@ -599,7 +599,7 @@ pub fn driver_download(app: AppHandle, name: String, url: String) -> Result<bool
 // ── Root ─────────────────────────────────────────────────────
 
 const FOLKPATCH_BANNER: &str = include_str!("../../banner-folkpatch.txt");
-const KERNELSU_BANNER: &str = include_str!("../../banner-kernelsu.txt");
+const KERNELSU_BANNER: &str = include_str!("../../banner.txt");
 const KERNELSU_NEXT_BANNER: &str = include_str!("../../banner-kernelsu-next.txt");
 const SUKISU_BANNER: &str = include_str!("../../banner-sukisu.txt");
 
