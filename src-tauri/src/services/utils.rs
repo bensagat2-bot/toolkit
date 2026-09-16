@@ -739,10 +739,11 @@ pub fn root(app: AppHandle, opts: RootOptions) -> Result<bool, String> {
     emit(&app, "Patching boot image...");
     let patched_local = match mgr {
         "folkpatch" => auto_patch_folkpatch(&app, &serial, &work, boot_img.to_string_lossy().as_ref())?,
-        "sukisu" => auto_patch_kptools(&app, &serial, &work, boot_img.to_string_lossy().as_ref(),
-            "https://api.github.com/repos/SukiSU-Ultra/SukiSU_KernelPatch_patch/releases/latest",
-            "kpimg")?,
-        _ => auto_patch_ksud(&app, &serial, &work, boot_img.to_string_lossy().as_ref(), &release, &abi)?,
+        "sukisu" => {
+            let sukisu_ksud = extract_ksud_from_apk(&apk_path, &work)?;
+            auto_patch_ksud(&app, &serial, &work, boot_img.to_string_lossy().as_ref(), &release, &abi, Some(sukisu_ksud))?
+        },
+        _ => auto_patch_ksud(&app, &serial, &work, boot_img.to_string_lossy().as_ref(), &release, &abi, None)?,
     };
     let Some(patched_local) = patched_local else {
         return Err("Auto-patch failed.".into());
@@ -871,6 +872,31 @@ fn pick_ksud(release: &serde_json::Value, abi: &str) -> Option<serde_json::Value
     }).cloned()
 }
 
+/// Extracts `lib/arm64-v8a/libksud.so` from a SukiSU APK (which is a zip)
+/// and saves it as `ksud` in the work directory.
+fn extract_ksud_from_apk(apk_path: &Path, work: &Path) -> Result<PathBuf, String> {
+    use std::io::Read;
+    let file = std::fs::File::open(apk_path)
+        .map_err(|e| format!("Failed to open APK: {e}"))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("Failed to read APK as zip: {e}"))?;
+    let mut found = None;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i)
+            .map_err(|e| format!("Failed to read zip entry: {e}"))?;
+        let name = entry.name().to_lowercase().replace('\\', "/");
+        if name == "lib/arm64-v8a/libksud.so" {
+            let dest = work.join("ksud");
+            let mut out = std::fs::File::create(&dest)
+                .map_err(|e| format!("Failed to create ksud file: {e}"))?;
+            std::io::copy(&mut entry, &mut out)
+                .map_err(|e| format!("Failed to extract ksud: {e}"))?;
+            found = Some(dest);
+            break;
+        }
+    }
+    found.ok_or_else(|| "lib/arm64-v8a/libksud.so not found in APK".into())
+}
 fn auto_patch_ksud(
     app: &AppHandle,
     serial: &str,
